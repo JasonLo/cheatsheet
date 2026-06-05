@@ -86,12 +86,18 @@ If `--target` is missing, ask for it once before proceeding.
      the cite entirely and describe the pattern generically (P-7) — never the
      repo name/slug/URL or verbatim private code.
      One line per bullet where you can. Conceptual, not a syntax dump.
+     **Cap: only the 3 highest-value patterns (O-5).** Surface a 4th or further
+     bullet only when it carries strong justification (e.g. a distinct,
+     load-bearing pattern the top 3 genuinely don't cover) — never to pad.
 
    ## Learnings
 
    Each bullet names an obsolete pattern/misconception found in your code and
    its replacement, framed at the level of *intent and mental model*, not API
-   signatures — terse, one to two lines:
+   signatures — terse, one to two lines. **Cap: only the 3 highest-value
+   learnings (O-5).** Add a 4th or further learning only with strong
+   justification (a materially distinct misconception, not a near-duplicate of
+   one already listed):
 
    - **<Old mental model>** → **<New mental model>.** The why + what now
      expresses the same intent. (seen in `owner/repo:path` — public sources
@@ -108,12 +114,12 @@ If `--target` is missing, ask for it once before proceeding.
    - NEVER <do the obsolete/anti-pattern action>.
    ````
 
-6. **Author the Learnings section at conceptual altitude (O-5).** Every entry
+6. **Author the Learnings section at conceptual altitude (O-6).** Every entry
    must explain a *why* — the shift in intent or model. Reject syntax-only diffs
    ("`x()` is now `y()`") unless paired with the conceptual reason. If a change
    is purely cosmetic syntax, leave it out.
 
-7. **Author the Agent rules section (O-6).** Project the same findings into
+7. **Author the Agent rules section (O-7).** Project the same findings into
    imperative, directly-actionable guardrails a coding agent applies without
    rereading prose. Every bullet starts with **ALWAYS** or **NEVER**, in point
    form, one directive per bullet — at least one per material guardrail. Derive

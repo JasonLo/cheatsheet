@@ -28,16 +28,12 @@ uv run python -m ipykernel install --user --name myproj --display-name "Python (
 - Add `ipykernel` to `[dependency-groups].dev`, never as a runtime dep — "this project's notebooks run with this project's deps" (`JasonLo/best-in-slot:slots/python-tooling/ipykernel/example/pyproject.toml`).
 - Let the editor auto-discover the uv `.venv` kernel; don't register a global kernelspec (`JasonLo/best-in-slot:slots/python-tooling/ipykernel/README.md`).
 - Run UIs and headless executions through `uv run` so the env is resolved consistently (`JasonLo/best-in-slot:slots/python-tooling/ipykernel/CHEATSHEET.md`).
-- Notebooks live in `notebooks/`, scoped to exploration/demos; reusable logic extracted into package modules with the notebook as a thin caller.
-- Strip outputs from git with `nbstripout` via a `.gitattributes` filter when collaborating.
-- Same pattern echoed across several other private envs (deps-only `ipykernel` in dev groups) — generalized here, not cited.
 
 ## Learnings
 
 - **"Install a kernel globally / `--user` and point notebooks at it"** → **one kernel per project env, discovered automatically.** The editor reads the project's `.venv`; a per-project dev dep removes global-kernel ambiguity and version drift. Explicit `ipykernel install` is a fallback for shared/multi-env servers, not the default. (seen in `JasonLo/best-in-slot:slots/python-tooling/ipykernel/README.md`)
 - **"ipykernel is part of my app"** → **it's dev tooling only.** Belongs in the dev dependency group; shipping it as a runtime dep pollutes the production env. (seen in `JasonLo/best-in-slot:slots/python-tooling/ipykernel/example/pyproject.toml`)
 - **"`sys.path.insert` to import project code in a notebook"** → **install the package editable.** `uv sync` makes the project importable in its own env, so the kernel already sees your code — path hacks signal a mis-scoped kernel.
-- **"Commit notebooks as-is"** → **treat outputs as untracked noise.** Strip them at the git boundary (`nbstripout` filter) so diffs stay reviewable and large binary outputs never land in history.
 
 ## Agent rules
 

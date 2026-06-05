@@ -37,17 +37,12 @@ with InfluxDBClient.from_env_properties() as client:
 
 - **Metric collector → InfluxDB:** parse a script/sensor reading into `Point` objects, write a list via `write_api`, one process run = one batch. (`JasonLo/server-usage-monitor:send_gpu_usage.py`, `JasonLo/server-usage-monitor:utils.py`)
 - **`Point` builder for structured metrics:** `Point(measurement).tag(...).field(...)`; tags = indexed dimensions (host, user, sensor), fields = numeric values. (`JasonLo/best-in-slot:slots/databases/influxdb/example/influxdb_example/__init__.py`)
-- **Config from env via dotenv:** url/token/org/bucket pulled from `os.getenv` with `load_dotenv()`; never inlined. (`JasonLo/server-usage-monitor:utils.py`, `JasonLo/dazzo-monitor:server/push.py`)
-- **Client as context manager:** `with InfluxDBClient(...) as client:` for guaranteed cleanup. (`JasonLo/server-usage-monitor:send_gpu_usage.py`)
-- **Raw line protocol over HTTP for constrained writers:** `POST /api/v2/write?org=&bucket=&precision=s` with `Authorization: Token <tok>`, body = hand-built line protocol. Used where the SDK is unavailable (ESP32/CircuitPython, tiny scripts). (`JasonLo/dazzo-monitor:server/push.py`; also seen in private device/ingest repos — generalized)
 - **Flux for reads:** `from(bucket) |> range() |> filter() |> aggregate`; iterate `tables[].records`. (`JasonLo/best-in-slot:slots/databases/influxdb/CHEATSHEET.md`)
 
 ## Learnings
 
 - **String-formatted line protocol as the default write path** → **`Point` builder as the default; raw line protocol only for SDK-less writers.** Manual `f"{m},{tags} {fields} {ts}"` silently mis-types fields (int vs float vs string) and breaks on escaping; `Point` enforces the type/escaping contract. Drop to raw strings only on devices that can't run the SDK. (seen in `JasonLo/dazzo-monitor:server/push.py`)
-- **`SYNCHRONOUS` write_api for every workload** → **batched `WriteOptions` for any stream/high-volume source.** Synchronous = one HTTP round-trip per write, fine for a once-per-run collector but a bottleneck for sensor streams; the batching writer coalesces points and retries in the background. (seen in `JasonLo/server-usage-monitor:send_gpu_usage.py`)
 - **Commenting out / omitting the timestamp** → **always set an explicit UTC `.time()`.** Letting the server stamp arrival time conflates event time with ingest time and makes backfill/replay wrong; time-series correctness depends on the producer's clock. (seen in `JasonLo/server-usage-monitor:send_gpu_usage.py`)
-- **Hand-rolling the v2 write via `requests`/`httpx`** → **use the official client; reach for raw HTTP only when the SDK can't run.** The raw call reimplements auth, batching, retry, and gzip that the client already provides; on a normal Python host it's strictly more to maintain. (generalized from private repos; public echo in `JasonLo/dazzo-monitor:server/push.py`)
 - **Tags vs fields chosen ad hoc** → **tags = low-cardinality indexed labels, fields = the measured values.** High-cardinality tags (ids, timestamps) explode the series index; this is a schema decision, not a syntax one.
 
 ## Agent rules

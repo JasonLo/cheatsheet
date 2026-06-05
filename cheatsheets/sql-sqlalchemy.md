@@ -35,15 +35,11 @@ with Session(engine) as session, session.begin():
 - Postgres via `create_engine` from a `DATABASE_URL` env var; normalize a `postgres://` scheme to `postgresql://` before passing it. One module-level engine reused process-wide. (`JasonLo/openalex-ingest:openalex_ingest/common.py`)
 - A `@contextmanager get_db()` wrapper around a `sessionmaker`-built `Session`, yielding the session and closing it in `finally` — manual session lifecycle for batch/worker code. (`JasonLo/openalex-ingest:openalex_ingest/common.py`)
 - ORM model as the durable state record (harvest checkpoints: timestamps, retry intervals, flags), read/updated rather than a transient query result. (`JasonLo/openalex-ingest:openalex_ingest/repositories.py`)
-- Idempotent upserts via `session.merge(obj)` then `commit()` to persist a mutated state object. (`JasonLo/openalex-ingest:openalex_ingest/repositories.py`)
-- Filtering with explicit SQL boolean logic — `or_(...)`, `== None`, `== True` — inside a repository-style accessor class. (`JasonLo/openalex-ingest:openalex_ingest/repositories.py`)
 
 ## Learnings
 
 - **`session.query(Model).filter(...).all()` as the way to read** → **`select(Model)` statements executed via `session.execute(...).scalars()`.** The Query object is legacy in 2.0; a single `select()` construct now drives both ORM and Core, so query-building is uniform and composable instead of a separate ORM-only API. (seen in `JasonLo/openalex-ingest:openalex_ingest/repositories.py`)
 - **`declarative_base()` factory + untyped `Column(Text)` attributes** → **subclass `DeclarativeBase` with `Mapped[...]` / `mapped_column(...)`.** The model's Python types now *are* the schema declaration: type checkers and IDEs see column types, nullability comes from `Optional`/`| None`, and the base is a real class, not a generated one. (seen in `JasonLo/openalex-ingest:openalex_ingest/repositories.py`)
-- **Pinning `sqlalchemy>=2.0` but coding in 1.x idioms** → **adopt the 2.0 mental model, not just the version.** 2.0 isn't a drop-in: the value is the unified `select()`/`Session.execute` flow and typed mappings; running 1.x-style Query API on 2.0 forgoes every reason to be on 2.0. (seen in `JasonLo/openalex-ingest:openalex_ingest/common.py`)
-- **SQL-comparison idioms `col == None` / `col == True`** → **`col.is_(None)` / `col.is_(True)`.** Intent is an identity/IS test against NULL/boolean, not value equality; the `is_()` operators say that directly and avoid linter/ambiguity traps. (seen in `JasonLo/openalex-ingest:openalex_ingest/repositories.py`)
 - **Hand-rolled `@contextmanager` around a bare `Session`** → **use `with Session(engine) as s:` (and `s.begin()` for the transaction).** The Session is itself a context manager that guarantees close + rollback-on-error, so the wrapper re-implements what the library already provides. (seen in `JasonLo/openalex-ingest:openalex_ingest/common.py`)
 
 ## Agent rules

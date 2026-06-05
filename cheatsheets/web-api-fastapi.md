@@ -51,22 +51,12 @@ app.include_router(router)
 - **Lifespan for model/backend warmup** — `@asynccontextmanager` loads a heavy model/client on startup, cleans up after `yield`; pre-load failures degrade to lazy-load-on-first-request. Your standard shape for any GPU/ML service.
 - **`APIRouter` + `include_router(prefix=..., tags=...)`** — endpoints live in `routers/`, mounted onto a thin `main.py` app; keeps the OpenAI-compatible surface isolated from app wiring.
 - **Async path operations** — `async def` handlers for I/O-bound work; `asyncio.Semaphore` caps concurrent GPU generations so requests don't starve VRAM.
-- **Pydantic v2 schemas with `Field(...)`** — request/response models in a dedicated `schemas.py`, using `Field` descriptions, `Literal` enums, and `max_length` for validation + auto OpenAPI docs.
-- **Typed return annotations** — handlers annotate return type (`-> dict[str, str]`) so FastAPI generates the response schema.
-- **Env-driven config + `uvicorn.run` entrypoint** — `HOST`/`PORT`/`WORKERS` from `os.getenv`, a `main()` that calls `uvicorn.run("api.main:app", ...)`.
-- **CORS middleware + static/sub-app mounts** — `app.add_middleware(CORSMiddleware, ...)`, `app.mount("/static", StaticFiles(...))`, optionally mounting a Gradio UI.
-- **`pydantic-settings` for typed config + `@lru_cache` `get_settings` injected via `Depends`** (public: `JasonLo/best-in-slot:slots/python-web/fastapi/CHEATSHEET.md`).
-- **`TestClient` as a context manager** so lifespan startup/shutdown runs during tests (public: `JasonLo/best-in-slot:slots/python-web/fastapi/CHEATSHEET.md`).
-- Minimal idiomatic skeleton — typed `BaseModel` body, `/healthz`, typed returns (public: `JasonLo/best-in-slot:slots/python-web/fastapi/example/fastapi_example/main.py`).
 
 ## Learnings
 
 - **`@app.on_event("startup")` + module-level `global` resource → lifespan context manager owning the resource.** One scope acquires *and* releases; no globals, no half-initialized state, and startup/shutdown logic that shares variables lives together. `on_event` is deprecated.
 - **Module globals / direct imports for shared state → `Depends` injection (read from `app.state` or a cached factory).** Wiring becomes explicit and overridable per-request, which makes handlers testable and swappable instead of bound to import-time singletons.
 - **Blocking I/O (`requests`, sync DB calls) inside a handler → either an `async` client awaited in `async def`, or keep it `def` so FastAPI offloads it to the threadpool.** A blocking call in an `async def` route stalls the whole event loop; pick the mode that matches the work.
-- **`class Config:` on settings/models → pydantic v2 config (`SettingsConfigDict` / `model_config`).** FastAPI is pydantic-v2-native now; v1-style inner `Config` and `pydantic.v1` imports are the deprecated migration path, not the target.
-- **Untyped handlers returning bare values → typed `BaseModel` / annotated returns.** The type *is* the contract: it drives validation, serialization, and the OpenAPI schema — not just documentation.
-- **Repeated `param: T = Depends(dep)` → a reusable `Annotated[T, Depends(dep)]` alias.** Dependencies are a declared, named capability shared across routes, not boilerplate copy-pasted per signature.
 
 ## Agent rules
 

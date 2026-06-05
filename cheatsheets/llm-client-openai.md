@@ -55,18 +55,12 @@ _All Python OpenAI-SDK usage mined lives in private repos, so patterns below are
 - **Cached lazy client singleton** — module-global `_client`, built once inside a `_get_client()` helper (thread-locked for the sync `OpenAI`), reused across calls. Reach for it so config is read once and the HTTP pool is shared.
 - **Config from env, not literals** — `api_key`, `base_url`, and model name pulled from environment (`OPENAI_API_KEY` and project-specific vars); `base_url=... or None` lets the same code hit OpenAI proper or a self-hosted OpenAI-compatible endpoint.
 - **`AsyncOpenAI` for eval/throughput backends** — async client constructed with explicit `timeout` and `max_retries`; calls use `await client.chat.completions.create(...)`. Used where many model calls fan out.
-- **JSON-mode structured output** — `response_format={"type": "json_object"}` then `json.loads(resp.choices[0].message.content)` and hand-validate. Recurs across query-generation, rationale, and judge flows. (See Learnings — superseded by `.parse()`.)
-- **LLM-as-judge** — a separate model scores a rubric (relevance/eligibility/specificity) at `temperature=0.0`, returning JSON; kept distinct from the generator model to avoid self-eval bias.
-- **Thread-pool fan-out over the sync client** — `ThreadPoolExecutor` submitting blocking `chat.completions.create` calls for parallelism. (See Learnings — prefer `AsyncOpenAI`.)
-- **OpenAI-compatible server side** — also exposing endpoints that mimic OpenAI's request/response schema so OpenAI clients can target a custom backend unchanged.
 
 ## Learnings
 
 - **Module-level `openai.api_key` + `openai.ChatCompletion.create`** → **instantiate an `OpenAI()`/`AsyncOpenAI()` client.** The pre-v1 module-global API is gone in v1+; state (key, base_url, org, retries, timeout) now lives on a client object you construct and pass around, not on the `openai` module.
-- **Hard-coded / module-global API key** → **let the client read `OPENAI_API_KEY` from the environment.** `OpenAI()` with no args already does this; keys belong in env/`.env` (python-dotenv), never in source or globals — also avoids leaking secrets.
 - **JSON mode + manual `json.loads` + hand-rolled validation** → **`responses.parse()` / `chat.completions.parse()` with a Pydantic model.** Intent shifted from "ask for JSON, then defensively parse and re-check shape" to "declare the schema once and get a validated typed object (`output_parsed`)"; the SDK derives the JSON schema and enforces it.
 - **Chat Completions as the default surface** → **Responses API is the current default.** The SDK now leads with `client.responses.create`; treat Chat Completions as the previous standard. New work starts on Responses (`input`/`instructions`/`output_text`); migrate when touching old call sites, not blindly.
-- **`ThreadPoolExecutor` around the sync client for concurrency** → **`AsyncOpenAI` + `asyncio.gather`.** These calls are I/O-bound network waits; the async client is the first-class concurrency path and avoids a thread per in-flight request.
 
 ## Agent rules
 

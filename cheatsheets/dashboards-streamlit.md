@@ -35,17 +35,12 @@ st.line_chart(df.set_index("date")["value"])
 - Single-file `app.py`: `set_page_config(layout="wide")` + `st.title`, then load → filter → chart top to bottom; reach for it on every small dashboard (`JasonLo/best-in-slot:slots/python-web/streamlit/example/app.py`).
 - `@st.cache_data` wrapping the data load/transform so the script reruns cheaply on every widget interaction (same file).
 - `@st.cache_resource` reserved for expensive shared handles (DB engine, model) that must not be re-created or hashed (`JasonLo/best-in-slot:slots/python-web/streamlit/CHEATSHEET.md`).
-- Counter/toggle state via `if "k" not in st.session_state: st.session_state.k = 0`, mutated inside an `if st.button(...)` block (same CHEATSHEET).
-- Quick data views with `st.dataframe` + `st.line_chart`/`st.bar_chart` straight off a pandas frame; `text_input`/`slider` as filters.
-- Ships headless in Docker on `:8501` with a `/_stcore/health` smoke check (`JasonLo/best-in-slot:slots/python-web/streamlit/example/README.md`).
 
 ## Learnings
 
 - **"The script is an event handler — wire a button to a callback that mutates state"** → **the whole script reruns top-to-bottom on every interaction.** State lives in `st.session_state`; widgets return their current value inline. Don't model it as a callback/event loop; model it as a pure function of state re-executed each run.
 - **"Reach for `st.cache` to memoize anything slow"** → **choose by lifetime, not by speed.** `st.cache_data` for serializable data (returns a copy, safe to mutate); `st.cache_resource` for one unhashable singleton (connection/model). Bare `st.cache` is gone.
 - **"Drop files in `pages/` for multipage"** → **declare pages as objects.** `st.navigation([st.Page(...)])` is the current model: pages become first-class, support grouping/auth-gating/dynamic lists, and share top-level state — the magic `pages/` directory is the legacy fallback.
-- **"`use_container_width=True` makes it fill the column"** → **width is a first-class layout prop.** Pass `width="stretch"` / `"content"` / int to `dataframe`, charts, buttons; the boolean flag is deprecated and conflates "fill" with a yes/no.
-- **"Recompute the filtered frame top-down on every keystroke"** → **isolate hot regions with `st.fragment`.** A fragment reruns only itself, so a chart refresh or polling widget doesn't replay the whole script — the mental shift is partial rerun, not all-or-nothing.
 
 ## Agent rules
 

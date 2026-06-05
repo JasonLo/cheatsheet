@@ -36,7 +36,6 @@ if __name__ == "__main__":
 - **"A script needs the project's environment"** → **"A script can own its dependencies."** PEP-723 + uv lets a *tool* script declare deps inline and run anywhere; decide tool-vs-glue before picking the run style. (seen in `JasonLo/undock:scripts/release.py` vs a private project-glue script)
 - **"`uv run python script.py` is just how you run a script"** → **"`python` chooses the project env and ignores inline metadata."** `uv run script.py` builds an isolated env from `# /// script`; inserting `python` silently opts out of that isolation. The question is which environment model you're invoking, not syntax.
 - **"The `# /// script` block is mine to hand-maintain"** → **"uv owns the metadata; you state intent."** Use `uv add --script` / `uv lock --script`; hand-editing the dep list drifts it out of sync, same as hand-editing a lockfile.
-- **"Self-contained means unpinned/throwaway"** → **"Self-contained can still be reproducible."** `uv lock --script` gives a portable tool the same pinned guarantee a project gets from `uv.lock`; portability and reproducibility are independent axes.
 
 ## Agent rules
 

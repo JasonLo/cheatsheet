@@ -30,19 +30,15 @@ df = lf.collect()                               # one execution, optimized
 
 _Docs-based: the user's repos show essentially no first-party Polars API code yet — dataframe work to date is pandas (`.loc`/`.query`/`.groupby`/`.merge`) and R/dplyr (`group_by` in analysis scripts). Polars is the chosen `python-data` framework going forward, so patterns below are the current-practice target, not mined idioms._
 
-- Selected Polars as the standing dataframe pick over pandas for the `python-data` slot (`JasonLo/best-in-slot:slots/python-data.yaml`).
+- Reach for `scan_*` + `collect()` for any file-backed ETL; reserve eager `pl.DataFrame` / `read_*` for small in-memory tables and quick inspection.
 - Crossover path documented as `polars.from_pandas(df)` for migrating existing pandas frames (`JasonLo/best-in-slot:slots/python-data/pandas/CHEATSHEET.md`).
 - Existing aggregation habits are dplyr-style `group_by` + summarise in R analysis scripts — directly transferable to `pl.col(...).agg(...)`.
-- Reach for `scan_*` + `collect()` for any file-backed ETL; reserve eager `pl.DataFrame` / `read_*` for small in-memory tables and quick inspection.
 
 ## Learnings
 
 - **Pandas/R indexing mindset (`df.loc[...]`, `df[mask]`, `df["x"] = ...`)** → **expressions as the unit of work.** Describe *what* a column should be with `pl.col(...)` inside `select`/`with_columns`/`filter`/`group_by().agg()`; Polars parallelizes and optimizes the whole expression set, which positional indexing can't.
 - **`read_csv` then transform (pandas-style eager load)** → **`scan_*` + `collect()`.** Scanning is lazy; the optimizer prunes columns/rows at the reader, so you never materialize data you immediately drop.
-- **`groupby(...).transform(len)` / merge-back to broadcast a group stat** → **window expressions `expr.over("key")`.** Group-aligned results land back on every row in one pass, no join.
 - **In-place mutation / chained reassignment (`df["c"] = ...`)** → **immutable transforms returning new frames.** Build a single chain; each step yields a new frame, so there is no `SettingWithCopy` ambiguity and the chain stays one optimizable plan.
-- **Conditional columns via boolean masks + assignment** → **`pl.when(...).then(...).otherwise(...)`** as a single expression inside `with_columns`.
-- **Collecting then writing a large result** → **`sink_parquet`/`sink_csv`** to stream output without holding the full frame in memory.
 
 ## Agent rules
 

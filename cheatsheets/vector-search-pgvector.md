@@ -47,15 +47,12 @@ with psycopg.connect(url) as conn:
 - pgvector is the chosen vector-DB slot; reach for it instead of a standalone vector DB (Milvus/Qdrant) when Postgres is already in the stack — keeps one datastore. (`JasonLo/best-in-slot:slots/databases-vector.yaml`)
 - Cosine as the default metric: `vector(768)` column + HNSW `vector_cosine_ops` index + `<=>` query operator, kept consistent end to end. (`JasonLo/best-in-slot:slots/databases/postgres-psycopg/CHEATSHEET.md`)
 - pgvector-python `register_vector(conn)` over a `psycopg` v3 connection, then pass/receive plain numpy arrays — no manual `[..]` string formatting. (`JasonLo/best-in-slot:slots/databases/postgres-psycopg/CHEATSHEET.md`)
-- Vector queries run through the same `psycopg` v3 pool conventions as relational ones (`AsyncConnectionPool`, `%s` params, one query-fn per op), so vector search is just another query against the app DB. (`JasonLo/best-in-slot:slots/databases/postgres-psycopg/README.md`)
 
 ## Learnings
 
 - **"A vector column is searchable enough" → index choice is a recall/latency contract.** Without an ANN index every query is an exact full scan; HNSW (or IVFFlat) trades exact results for sub-linear search, and the opclass picks the metric.
 - **"Pick any distance operator" → operator must match the embedding's training metric.** Cosine embeddings searched with `<->` (L2) silently rank wrong; use `<=>`/`vector_cosine_ops` for cosine models, and keep column-index-query all on one metric.
 - **"Build the index, then load data" (IVFFlat habit) → HNSW builds incrementally; IVFFlat must see data first.** IVFFlat clusters existing rows, so its lists are meaningless on an empty table (build after load, ~rows/1000 lists). HNSW has no such ordering constraint — but for large loads, bulk-insert then index for speed.
-- **"Tune recall by rebuilding the index" → recall is a runtime knob.** `hnsw.ef_search` / `ivfflat.probes` are per-session/per-transaction settings; raise them for accuracy without touching the index.
-- **"Default to a dedicated vector DB" → start in Postgres.** For most app-scale corpora pgvector colocated with the relational data beats operating a separate vector service; reach for `halfvec`/quantization or a specialized store only when scale forces it.
 
 ## Agent rules
 

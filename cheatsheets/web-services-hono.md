@@ -42,23 +42,14 @@ export default { port: 3000, fetch: app.fetch };
 ## Typical usage patterns
 
 - Split `app.ts` (routes) from `index.ts` (runtime entry); entry only wires `fetch: app.fetch`. Lets the same app target Bun/Workers/Node unchanged. (`JasonLo/best-in-slot:slots/web-ts/hono/example/src/index.ts`, `JasonLo/md-render:src/index.ts`)
-- `GET /healthz` returning `c.json({ status: "ok" })` as a liveness probe — first route on every service. (`JasonLo/best-in-slot:slots/web-ts/hono/example/src/app.ts`)
-- Path params via `c.req.param("name")`, query via `c.req.query("url")`; respond with `c.json`/`c.html` and an explicit status arg on errors. (`JasonLo/md-render:src/index.ts`)
-- Custom error class caught in the handler, mapped to `c.html(page, err.status)` — error-to-response mapping lives in the route, not a global handler. (`JasonLo/md-render:src/index.ts`)
 - Validation through `@hono/zod-validator` `zValidator("json", schema)` + `c.req.valid("json")` for typed input. (`JasonLo/best-in-slot:slots/web-ts/hono/CHEATSHEET.md`)
-- Route grouping via sub-`new Hono()` mounted with `app.route("/users", users)`. (`JasonLo/best-in-slot:slots/web-ts/hono/CHEATSHEET.md`)
-- Built-in middleware composed in `app.use("*", logger(), cors())`. (`JasonLo/best-in-slot:slots/web-ts/hono/CHEATSHEET.md`)
 - Tests hit `app.request("/path")` directly with `bun:test` — no server boot, asserts on the `Response`. (`JasonLo/best-in-slot:slots/web-ts/hono/example/src/app.test.ts`)
-- Pinned `hono ^4.x` on `"type": "module"`, Bun dev/start scripts. (`JasonLo/md-render:package.json`)
 
 ## Learnings
 
 - **"A web framework owns its own HTTP server" → "Hono is a Fetch handler; the runtime owns the server."** Keep the app a portable `fetch` and choose the adapter at the edge — so one codebase runs on Workers, Bun, and Node without rewrites.
-- **Untyped `new Hono()` → typed `Hono<{ Bindings; Variables }>`.** Declaring env/var generics once makes `c.env`, `c.get`, and `c.set` type-safe instead of `any` — the type info is the point, not a cosmetic.
 - **Defining routes as loose statements → chaining routes off the constructor.** `c.json(x, status)` literals plus chaining feed Hono's RPC (`hc`) type inference; detached `app.get(...)` statements lose the response types a typed client needs.
 - **Hand-rolled body parsing/validation → schema validator middleware.** `zValidator(target, schema)` + `c.req.valid(target)` replaces manual `parseBody` + ad-hoc checks; validation becomes declarative and the validated shape is typed at the handler.
-- **Booting a server (or mocking HTTP) to test → calling `app.request()`.** The app is already a request→Response function; invoke it in-process for fast, hermetic tests.
-- **Returning bare bodies / implicit 200 → explicit `c.json(body, status)` with a deliberate code.** Status as a typed argument keeps error paths honest and preserves per-status types for RPC clients.
 
 ## Agent rules
 

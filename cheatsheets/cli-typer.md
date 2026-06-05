@@ -50,20 +50,13 @@ if __name__ == "__main__":
 - **One `typer.Typer(...)` per package, configured up front** — set `no_args_is_help=True` and `add_completion=False` at construction so a bare invocation prints help and no shell-completion noise leaks. (`JasonLo/best-in-slot:bis/cli.py`, `JasonLo/cairn/src/cairn/cli/app.py`)
 - **Sub-apps composed with `add_typer`** — each command group is its own `Typer` in its own module, wired into the root app under a name; keeps large CLIs flat-per-file. (`JasonLo/cairn/src/cairn/cli/app.py`)
 - **`@app.callback()` root for shared/global options** — `--version` implemented as a callback option with `is_eager=True` that echoes and `raise typer.Exit()`. (`JasonLo/cairn/src/cairn/cli/app.py`)
-- **`invoke_without_command=True` + `ctx.invoked_subcommand` for a default action** — bare command launches a REPL/interactive path; subcommands still dispatch normally. (seen in a private repo)
-- **Lazy imports inside command bodies** — heavy deps imported when the command runs, keeping `--help` and startup fast.
 - **`raise typer.Exit(code=N)` for error exits**, `typer.echo(..., err=True)` for stderr, `typer.prompt` / `typer.confirm` for interaction — used instead of `sys.exit` / `input`. (`JasonLo/best-in-slot:bis/cli.py`)
-- **Thin CLI layer** — parsing + I/O only; orchestration lives in non-CLI modules. (`JasonLo/best-in-slot:bis/cli.py`)
-- Newer CLIs use the modern `Annotated[...]` parameter style (`JasonLo/best-in-slot`, `JasonLo/cairn`); some older private CLIs still use the default-value `= typer.Option(...)` style — see Learnings.
-- Note: not every CLI here is Typer — at least one public repo still uses `argparse` for a two-subcommand tool; Typer is the default reach when commands/types grow.
 
 ## Learnings
 
 - **Default-value parameters (`x: int = typer.Option(...)`) → type annotation carries the metadata (`x: Annotated[int, typer.Option(...)]`).** The parameter's *type* is the source of truth and its default is a real Python default, so the same function stays callable as a plain function and type checkers see the true type — the old style overloaded the default slot with a sentinel object.
-- **`...` (Ellipsis) to mark "required" → just omit the default.** Required-ness is expressed by the absence of a default, the same as ordinary Python; the `Argument(...)` / `Option(...)` Ellipsis idiom was a workaround for the default-value style and reads as noise under `Annotated`.
 - **Hand-rolled `argparse` subparsers / manual `sys.exit` → declare commands as typed functions and let Typer derive parsing.** Intent shifts from "describe the parser" to "write the function"; types drive choices/validation (`int`, `Enum`, `Path(exists=True)`, `bool` flags) and `typer.Exit(code=…)` replaces raw exits.
 - **Monolithic single-file CLI → sub-apps via `add_typer`.** Group commands by domain into separate `Typer` instances; composition at the root keeps each file small and the command tree discoverable, instead of one growing `if/elif` dispatch.
-- **`print()` / `input()` → `typer.echo` / `typer.prompt` / `typer.confirm`.** Routes output through Typer (stderr via `err=True`, testable via the CliRunner), rather than bare stdio that ignores the CLI context.
 
 ## Agent rules
 

@@ -60,22 +60,13 @@ const { Content } = await render(post);   // v6: render(entry), not entry.render
 
 - Content-focused static site, **no UI framework** — pure `.astro` + Markdown/MDX; ships zero client JS by default. (`JasonLo/jasonlo.dev`)
 - One `src/content.config.ts` with many typed collections (`blog`, `projects`, `publications`, `tools`, `journey`), each a `glob()` loader + a rich Zod `schema`. (`JasonLo/jasonlo.dev:src/content.config.ts`)
-- Schemas do real work: `z.coerce.date()` for dates, `z.enum(...)` for status, `.default(false)` for `draft`, nested `z.object`/`z.array` for structured frontmatter.
 - Query via `getCollection` / `getEntry`, render bodies via `render(entry)` → `<Content />`; dynamic routes built statically through `getStaticPaths`. (`JasonLo/jasonlo.dev:src/pages/blog/[slug].astro`)
-- Thin reusable filter wrapping the framework API, e.g. a `getPublished(name)` that drops `draft` entries, so every page filters consistently. (`JasonLo/jasonlo.dev:src/utils/collections.ts`)
-- Non-HTML outputs as endpoint routes: `search-index.json.ts`, `llms.txt.ts`, `robots.txt.ts` export `GET()` and read the same collections. (`JasonLo/jasonlo.dev:src/pages/search-index.json.ts`)
-- Layout owns `<head>`; pages inject SEO via a named `<slot name="head" />`; `ClientRouter` adds View Transitions. (`JasonLo/jasonlo.dev:src/layouts/BaseLayout.astro`)
-- Interactivity is small vanilla TS in `<script>` blocks (theme toggle, search, scroll); pre-paint logic uses `<script is:inline>` to avoid flashes — no hydrated component islands needed.
-- Integrations kept minimal: `@astrojs/mdx` + `@astrojs/sitemap`, Shiki for code highlighting, sharp image service.
 
 ## Learnings
 
 - **Frontmatter is untyped text** → **a collection schema is the validated, typed contract.** Define a Zod schema per collection; coerce/validate at build (`z.coerce.date`, enums, defaults) so pages consume real types and bad content fails the build, not the browser.
 - **"Where files live = a folder convention"** → **collections are declared, not discovered.** In v6 you register collections in `src/content.config.ts` with an explicit `loader: glob({...})`; the source dir is a config value, not magic. The legacy auto-`src/content/<name>` collection model is gone.
 - **A site framework means shipping a JS runtime** → **Astro ships zero JS by default; hydration is opt-in per component.** Reach for a client island (`client:*`) only for genuinely interactive widgets; static content and light DOM work stay HTML + a plain `<script>`.
-- **"Render the entry" is a method on the entry** → **rendering is a free function: `render(entry)`.** v6 removed `entry.render()`; import `render` from `astro:content`. Same shift for data access — query through `getCollection`/`getEntry`, never by reading files yourself.
-- **Generated data (search index, RSS, llms.txt) is a side build step** → **it's just another route.** A `*.json.ts` / `*.txt.ts` page exporting `GET()` reads your collections at build time — one source of truth, no separate pipeline.
-- **Interactivity = pull in React/Vue** → **most "interactive" needs are a scoped `<script>`.** Add a UI-framework integration only when component state/reuse justifies it; otherwise vanilla TS keeps the bundle empty.
 
 ## Agent rules
 
