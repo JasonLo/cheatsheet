@@ -8,7 +8,8 @@ description: Generate a self-maintaining personal cheatsheet from a use case + e
 Produce a human-facing cheatsheet for a **use case** anchored to an explicit
 **target** (a library, tool, repo, or path). The cheatsheet captures how the
 user *actually* uses the target today and corrects where that usage has gone
-stale — focused on concepts and intent, never syntax trivia.
+stale — focused on concepts and intent. One small reference snippet shows the
+current shape; the prose stays conceptual, never syntax-diff trivia.
 
 ## Inputs
 
@@ -46,30 +47,50 @@ If `--target` is missing, ask for it once before proceeding.
    *mental-model shift* behind the change — not just the new function name.
 
 5. **Author the cheatsheet** to `cheatsheets/<slug>.md`, where `<slug>` is the
-   lowercased, hyphenated use case + target. Use this structure exactly:
+   lowercased, hyphenated use case + target.
 
-   ```markdown
+   **Write every section in concise point form (O-4).** Short bullets, not
+   paragraphs. Keep a detail only if it is a future-use must-know/tip or carries
+   the conceptual learning; cut incidental narration, restatement, and backstory.
+   One idea per bullet; prefer a clause over a sentence.
+
+   Use this structure exactly:
+
+   ````markdown
    # <Use case> with <target>
 
    _Grounded in <login>'s repos as of <today>; current practice per <doc source>._
 
+   ## Reference snippet
+
+   ```<lang>
+   # One minimal, idiomatic block showing present-day usage of <target>,
+   # grounded in the current docs from step 3 — NOT copied from the user's
+   # (possibly obsolete) repo code. Smallest snippet that conveys the shape.
+   ```
+
+   One small block: the "what does correct usage look like today" anchor,
+   derived from the step-3 docs, not the mined repo files. A single illustrative
+   block — not an API listing. The no-syntax-dump rule below governs the prose,
+   not this anchor.
+
    ## Typical usage patterns
 
-   How you actually use <target> today, distilled to the recurring shapes —
-   the intent behind each pattern and when you reach for it. Cite the real
-   files (e.g. `owner/repo:path`). Keep it conceptual, not a syntax dump.
+   - Recurring shapes of how you use <target> today — one bullet each: the
+     pattern, when you reach for it, and a real-file cite (`owner/repo:path`).
+     One line per bullet where you can. Conceptual, not a syntax dump.
 
    ## Learnings
 
-   Each correction names an obsolete pattern or misconception found in your
-   code, the conceptual reason it changed, and what to do instead. Frame at the
-   level of *intent and mental model*, not API signatures:
+   Each bullet names an obsolete pattern/misconception found in your code and
+   its replacement, framed at the level of *intent and mental model*, not API
+   signatures — terse, one to two lines:
 
-   - **<Old mental model>** → **<New mental model>.** Why the model changed,
-     and what now expresses the same intent. (seen in `owner/repo:path`)
-   ```
+   - **<Old mental model>** → **<New mental model>.** The why + what now
+     expresses the same intent. (seen in `owner/repo:path`)
+   ````
 
-6. **Author the Learnings section at conceptual altitude (O-4).** Every entry
+6. **Author the Learnings section at conceptual altitude (O-5).** Every entry
    must explain a *why* — the shift in intent or model. Reject syntax-only diffs
    ("`x()` is now `y()`") unless paired with the conceptual reason. If a change
    is purely cosmetic syntax, leave it out.

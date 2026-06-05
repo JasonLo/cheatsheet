@@ -2,63 +2,38 @@
 
 _Grounded in JasonLo's repos as of 2026-06-05; current practice per uv official docs (context7 `/astral-sh/uv`)._
 
+## Reference snippet
+
+```python
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer", "rich"]
+# ///
+import typer
+
+app = typer.Typer()
+
+
+@app.command()
+def main(name: str) -> None:
+    print(f"hello {name}")
+
+
+if __name__ == "__main__":
+    app()
+# run anywhere: `uv run scripts/foo.py world` — no venv, no pip install
+# manage deps: `uv add --script scripts/foo.py rich`; pin: `uv lock --script scripts/foo.py`
+```
+
 ## Typical usage patterns
 
-- **The self-contained tool script.** A standalone executable shipped *with* a
-  repo but not *part of* its package: a PEP-723 `# /// script` header declaring
-  its own `requires-python` and `dependencies`, run via `uv run scripts/foo.py`.
-  Your reusable release manager is the canonical example — same shape across
-  `JasonLo/undock:scripts/release.py`,
-  `JasonLo/uw-s3:scripts/release.py`, and
-  `JasonLo/code-template:{{cookiecutter.project_name}}/scripts/release.py`.
-  The intent: ship a CLI tool (typer + rich) that runs identically on any
-  machine with `uv`, with zero `pip install` and no packaging step.
-
-- **The environment-isolation gotcha you already solved.** In
-  `JasonLo/undock:scripts/release.py` you strip `VIRTUAL_ENV` from the
-  environment before shelling out to `uv version`, because a script launched by
-  `uv run` inherits a `VIRTUAL_ENV` pointing at the script's *isolated cache
-  env* — so child `uv` commands would otherwise target the wrong venv. The
-  pattern worth remembering: a self-contained script and the project it acts on
-  live in **different** environments; be explicit about which one a subprocess
-  should see.
-
-- **The project-internal automation script.** A one-off operational script that
-  imports the project's own package and needs the project venv, e.g.
-  `JasonLo/matryoshka-weights:scripts/upload_imagenet_to_s3.py`
-  (`from matryoshka_weights.s3 import ...`, run as
-  `uv run python scripts/upload_imagenet_to_s3.py`). This is a legitimately
-  *different* category from the self-contained tool — it is glue for one repo,
-  not a portable tool.
+- **Self-contained tool script** — a PEP-723 `# /// script` header declaring its own `requires-python`/`dependencies`, run via `uv run`. Reach for it to ship a portable CLI (typer + rich) that runs on any machine with `uv`, zero packaging. (seen in `JasonLo/undock:scripts/release.py`, `JasonLo/uw-s3:scripts/release.py`, `JasonLo/code-template:{{cookiecutter.project_name}}/scripts/release.py`)
+- **Strip `VIRTUAL_ENV` before shelling out to `uv`** — a script launched by `uv run` inherits a `VIRTUAL_ENV` pointing at its *isolated cache env*, so child `uv` commands target the wrong venv. Must-know: the script and the project it acts on live in different environments. (seen in `JasonLo/undock:scripts/release.py`)
+- **Project-internal automation script** — imports the project's own package, needs the project venv, run as `uv run python scripts/x.py`. A different category from the portable tool: glue for one repo, not a standalone tool. (seen in `JasonLo/matryoshka-weights:scripts/upload_imagenet_to_s3.py`)
 
 ## Learnings
 
-- **"A script needs the project's environment"** → **"A script can own its
-  dependencies."** The mental shift PEP-723 + uv enables is that a script is no
-  longer a second-class citizen of a project venv. If a script is a *tool*
-  (not project-internal glue), declare its deps inline and let it run anywhere
-  via `uv run script.py`. Your `matryoshka-weights` upload script is bound to
-  its repo by `uv run python ... ` + a project import; your `undock/release.py`
-  is portable. Decide which one you're writing *before* you pick the run style.
-
-- **"`uv run python script.py` is just how you run a script with uv"** →
-  **"The `python` indirection chooses the project environment and ignores
-  inline metadata."** `uv run script.py` reads the `# /// script` block and
-  builds an *isolated* env for that script; inserting `python` runs it in the
-  active/project environment instead. The conceptual question isn't syntax —
-  it's *which environment model you're invoking*: a self-contained tool, or a
-  command inside a project. Reaching for `python` silently opts out of the
-  isolation a self-contained script is meant to have.
-
-- **"The `# /// script` block is mine to hand-maintain"** → **"uv owns the
-  metadata; you state intent."** Treat the dependency block as generated, not
-  hand-curated: `uv add --script script.py 'rich'` writes and updates it for
-  you, and `uv lock --script script.py` pins it to a sibling `.lock` for
-  reproducibility. Hand-editing the list is how it drifts out of sync with what
-  actually resolves — the same reason you don't hand-edit a project lockfile.
-
-- **"Self-contained means unpinned / throwaway"** → **"Self-contained can still
-  be reproducible."** A portable tool script isn't inherently less rigorous than
-  a project: if it matters, `uv lock --script` gives it the same
-  resolved-and-pinned guarantee a project gets from `uv.lock`. Portability and
-  reproducibility are independent axes, not a trade-off.
+- **"A script needs the project's environment"** → **"A script can own its dependencies."** PEP-723 + uv lets a *tool* script declare deps inline and run anywhere; decide tool-vs-glue before picking the run style. (seen in `JasonLo/undock:scripts/release.py` vs `JasonLo/matryoshka-weights:scripts/upload_imagenet_to_s3.py`)
+- **"`uv run python script.py` is just how you run a script"** → **"`python` chooses the project env and ignores inline metadata."** `uv run script.py` builds an isolated env from `# /// script`; inserting `python` silently opts out of that isolation. The question is which environment model you're invoking, not syntax.
+- **"The `# /// script` block is mine to hand-maintain"** → **"uv owns the metadata; you state intent."** Use `uv add --script` / `uv lock --script`; hand-editing the dep list drifts it out of sync, same as hand-editing a lockfile.
+- **"Self-contained means unpinned/throwaway"** → **"Self-contained can still be reproducible."** `uv lock --script` gives a portable tool the same pinned guarantee a project gets from `uv.lock`; portability and reproducibility are independent axes.
