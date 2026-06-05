@@ -1,6 +1,6 @@
 # cheatsheet
 
-An always up-to-date personal cheatsheet that maintains itself.
+An always up-to-date personal cheatsheet that maintains itself. Serving as a high-quality context reference for coding agent.
 
 ## Always up to date
 

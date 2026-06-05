@@ -37,3 +37,12 @@ if __name__ == "__main__":
 - **"`uv run python script.py` is just how you run a script"** → **"`python` chooses the project env and ignores inline metadata."** `uv run script.py` builds an isolated env from `# /// script`; inserting `python` silently opts out of that isolation. The question is which environment model you're invoking, not syntax.
 - **"The `# /// script` block is mine to hand-maintain"** → **"uv owns the metadata; you state intent."** Use `uv add --script` / `uv lock --script`; hand-editing the dep list drifts it out of sync, same as hand-editing a lockfile.
 - **"Self-contained means unpinned/throwaway"** → **"Self-contained can still be reproducible."** `uv lock --script` gives a portable tool the same pinned guarantee a project gets from `uv.lock`; portability and reproducibility are independent axes.
+
+## Agent rules
+
+- ALWAYS decide tool-vs-glue before choosing the run style: portable tool → `# /// script` + `uv run script.py`; project glue → `uv run python scripts/x.py`.
+- NEVER prepend `python` to `uv run script.py` for a self-contained tool — it opts out of PEP-723 isolation and uses the project env.
+- ALWAYS manage inline deps with `uv add --script` / `uv lock --script`.
+- NEVER hand-edit the `# /// script` dependency list — let uv own the metadata.
+- ALWAYS strip `VIRTUAL_ENV` before a `uv run` script shells out to child `uv` commands — the inherited value points at the isolated cache env.
+- ALWAYS `uv lock --script` when a self-contained tool needs reproducibility — pinning and portability are independent.

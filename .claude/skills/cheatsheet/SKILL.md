@@ -88,6 +88,16 @@ If `--target` is missing, ask for it once before proceeding.
 
    - **<Old mental model>** → **<New mental model>.** The why + what now
      expresses the same intent. (seen in `owner/repo:path`)
+
+   ## Agent rules
+
+   Imperative, point-form guardrails a coding agent (e.g. Claude Code) applies
+   directly — each distilled from a Learning/pattern above. Every bullet starts
+   with ALWAYS or NEVER and is directly actionable; no "why", no old→new framing
+   (that lives in Learnings):
+
+   - ALWAYS <do the current-practice action>.
+   - NEVER <do the obsolete/anti-pattern action>.
    ````
 
 6. **Author the Learnings section at conceptual altitude (O-5).** Every entry
@@ -95,11 +105,20 @@ If `--target` is missing, ask for it once before proceeding.
    ("`x()` is now `y()`") unless paired with the conceptual reason. If a change
    is purely cosmetic syntax, leave it out.
 
-7. **Register the cheatsheet.** Run `uv run scripts/register_cheatsheet.py` to
+7. **Author the Agent rules section (O-6).** Project the same findings into
+   imperative, directly-actionable guardrails a coding agent applies without
+   rereading prose. Every bullet starts with **ALWAYS** or **NEVER**, in point
+   form, one directive per bullet — at least one per material guardrail. Derive
+   them from the Learnings/Typical-usage findings, but keep them purely
+   imperative: no conceptual old→new framing (that stays in Learnings), no
+   signature dumps, no YAML frontmatter/tags. The rules live inside this single
+   cheatsheet file — never a separate artifact.
+
+8. **Register the cheatsheet.** Run `uv run scripts/register_cheatsheet.py` to
    regenerate the root `index.md` (Constitution P-4). Do not hand-edit
    `index.md`.
 
-8. **Report** the path written, the files mined, the doc source used, and the
+9. **Report** the path written, the files mined, the doc source used, and the
    number of learnings surfaced.
 
 ## Constraints
