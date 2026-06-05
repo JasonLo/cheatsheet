@@ -34,3 +34,13 @@ This repo uses **lite-spec** — invoke the skills by name:
 - `/spec-check` — drift report + status derivation across open intents
 
 <!-- lite-spec:pointer-block:end -->
+
+## Git workflow
+
+When I'm working inside a git worktree and ask you to **merge**, that one word means this whole sequence — do all of it, in order:
+
+1. **Commit** the outstanding work on the worktree branch.
+2. **Rebase** the branch onto `main`.
+3. **Fast-forward merge** the branch into `main` (`--ff-only`).
+4. **Clean up** the repo — remove the worktree and delete the merged branch.
+5. **Push** `main`.

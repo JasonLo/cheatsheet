@@ -4,3 +4,4 @@
 
 - [Code preferences with CLAUDE.md](cheatsheets/claude-md-code-preferences.md)
 - [Self-contained scripts with uv](cheatsheets/self-contained-scripts-uv.md)
+- [Validation with Pydantic v2](cheatsheets/validation-pydantic.md)
