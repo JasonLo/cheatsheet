@@ -1,16 +1,19 @@
 name: "Cheatsheet monthly refresh"
 
 # Re-mines the user's repos, regenerates every cheatsheet against current docs,
-# and opens ONE pull request per materially-changed cheatsheet (I-2).
+# and opens ONE issue listing only the cheatsheets whose content changed in
+# MEANING (obsolete idiom, changed Learning/Agent rule) — ignoring cosmetic
+# churn. The owner replies with the numbers to refresh; that comment triggers
+# cheatsheet-generate.yml, which opens one PR per chosen sheet (I-2 O-1/O-6).
 
 on:
   schedule:
     - cron: "17 4 1 * *"   # 04:17 UTC on the 1st of each month
   workflow_dispatch: {}     # always allow manual runs for testing
 
-permissions:                # least privilege: open PRs in THIS repo only
-  contents: write
-  pull-requests: write
+permissions:                # least privilege: this job only opens an issue
+  contents: read            # read the checked-out repo (existing cheatsheets/index)
+  issues: write
   id-token: write           # OIDC — required by claude-code-action
 
 concurrency:
@@ -20,12 +23,10 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 90       # bound a long multi-sheet run (tunable)
+    timeout-minutes: 90       # bound a long multi-sheet regen+compare run (tunable)
     env:
-      # gh writes (PRs/commits) target THIS repo via the default token.
-      GH_TOKEN: ${{ github.token }}
-      # Read-only PAT (contents+metadata, all repos incl. private) for cross-repo mining.
-      GH_SCAN_TOKEN: ${{ secrets.GH_SCAN_TOKEN }}
+      GH_TOKEN: ${{ github.token }}                  # issue writes target THIS repo
+      GH_SCAN_TOKEN: ${{ secrets.GH_SCAN_TOKEN }}    # read-only PAT for cross-repo mining
     steps:
       - name: Preflight — require the read-only scan token
         run: |
@@ -35,58 +36,80 @@ jobs:
           fi
 
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6 — bump the SHA deliberately
-        with:
-          fetch-depth: 0      # full history so per-sheet branches fork cleanly off main
 
       - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1 — bump the SHA deliberately
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           claude_args: |
-            --max-turns 150
-            --allowedTools "Read,Glob,Grep,Edit,Write,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(git status:*),Bash(git diff:*),Bash(git switch:*),Bash(git checkout:*),Bash(git restore:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(uv run:*)"
+            --max-turns 120
+            --allowedTools "Read,Glob,Grep,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue list:*),Bash(gh issue create:*)"
           prompt: |
-            You are the monthly self-maintenance agent for this cheatsheet repo (intent I-2).
+            You are the monthly self-maintenance agent for this cheatsheet repo (intent I-2, outcome O-1).
+            You re-check every existing cheatsheet against today's repos and docs and open ONE issue
+            flagging only the sheets that drifted in MEANING. You NEVER write files, branches, or PRs —
+            your only output is a single issue. Regeneration happens later, when the owner picks numbers
+            and the generate workflow runs (O-6).
 
             ## Orientation (read first)
             - Read `CLAUDE.md`, `specs/CONSTITUTION.md`, and `.claude/skills/cheatsheet/SKILL.md`.
-              The SKILL.md is your generation procedure — follow its mining → grounding →
-              classification → authoring workflow for each sheet.
-            - Resolve the GitHub login once: `gh api user --jq .login` (uses the scan token).
-            - Today's date and the base branch: capture with `date -u +%Y-%m-%d` and you start on the
-              repo's default branch.
+              The SKILL.md is the generation procedure — follow its mining → grounding →
+              classification → authoring workflow to reproduce each sheet's current ideal content.
+            - List what exists: every `cheatsheets/*.md`. Each H1 is `# <use case> with <target>` and an
+              italic source line records its inputs.
+            - Resolve the login once: `gh api user --jq .login` (uses the scan token).
+            - Capture today's date and month: `date -u +%Y-%m-%d` and `date -u +'%B %Y'`.
 
             ## Two-token rule (NON-NEGOTIABLE security boundary)
             - CROSS-REPO READS (mining other repos): ALWAYS prefix with the read-only token, e.g.
               `GH_TOKEN=$GH_SCAN_TOKEN gh search code ...`, `GH_TOKEN=$GH_SCAN_TOKEN gh api repos/<o>/<r>/contents/<p> ...`.
-            - WRITES (branch push, `gh pr create`) in THIS repo: use plain `gh`/`git` (default token).
-            - NEVER use the default token to read other repos; NEVER use the scan token to write.
+            - THE ISSUE WRITE (`gh issue list`/`gh issue create`) in THIS repo: plain `gh` (default token).
+            - NEVER read other repos with the default token; NEVER write with the scan token.
+            - You have NO write access to repo contents and CANNOT open PRs — your only output is one issue.
 
-            ## Privacy (Constitution P-7) — applies to every PR title, body, and file
+            ## Privacy (Constitution P-7) — applies to the entire issue (title + body)
             - For each mined repo resolve visibility: `GH_TOKEN=$GH_SCAN_TOKEN gh repo view <login>/<repo> --json visibility -q .visibility`.
-            - NEVER put a PRIVATE repo's name/slug/URL or verbatim code in any committed file or PR text.
-              Convey private-sourced patterns generalized. Public repos may be cited.
+            - NEVER name/slug/URL a PRIVATE repo or quote its code in the issue; convey private-sourced
+              patterns generalized. Public repos may be cited as evidence.
 
-            ## Task — refresh each cheatsheet, one PR per materially-changed sheet
+            ## Task — flag only MEANINGFUL drift, in ONE issue
             For every file in `cheatsheets/*.md`:
             1. Recover its inputs from the H1 `# <use case> with <target>` and the italic source line.
             2. Re-run the SKILL.md workflow against TODAY's repos (cross-repo reads) and TODAY's docs
                (context7 if available, else WebSearch + WebFetch of official docs/changelog). Produce the
-               updated sheet content in the same required structure.
-            3. Compare to the committed file. A change is **material** only if the Reference snippet,
-               Typical usage patterns, Learnings, or Agent rules changed. A diff limited to the
-               `_Grounded in ... as of <date>_` line is NOT material — skip it, open no PR.
-            4. If material:
-               - Before doing anything, check for an existing open PR: `gh pr list --state open --search "refresh <slug>" --json headRefName`. If one exists for this sheet's branch, SKIP (no duplicate).
-               - `git switch -c auto/refresh/<slug>-<YYYY-MM>` off the default branch.
-               - Write the updated `cheatsheets/<slug>.md`. Run `uv run scripts/register_cheatsheet.py`
-                 and stage `index.md` ONLY if it actually changed (it only changes if a title changed).
-               - Commit, `git push -u origin` the branch, then `gh pr create` titled
-                 `chore(cheatsheet): refresh <slug> (<Month YYYY>)` with a body that SUMMARIZES the delta
-                 (what idiom/learning changed and why) — not a raw diff.
-               - `git switch <default-branch>` and `git restore .` before the next sheet so each PR
-                 contains only its own change.
+               updated ideal content in the same required structure — in your head/scratch, NOT on disk.
+            3. Compare to the committed file and decide if the drift is MEANINGFUL. A change qualifies
+               ONLY when an idiom in the Reference snippet / Typical usage, a Learning, or an Agent rule
+               shifted in MEANING — e.g. a now-obsolete API pattern, a changed best practice, a corrected
+               recommendation. EXPLICITLY IGNORE (do NOT list): wording/phrasing tweaks, reordering,
+               formatting, and any change limited to the `_Grounded in … as of <date>_` line.
+            4. Keep only meaningfully-drifted sheets; RANK them by how much the change matters.
+            5. Dedup: `gh issue list --state open --search "Cheatsheet refresh"`. If an open refresh issue
+               already lists the same sheets, SKIP (do not open a duplicate).
+            6. If at least one sheet drifted meaningfully, open exactly ONE issue with `gh issue create`:
+               - Title: `Cheatsheet refresh — <Month YYYY>`
+               - Body: a short intro, a markdown table, then a one-line ask. The columns MUST be exactly
+                 `| # | Cheatsheet (use case) | Target | What changed in meaning | Evidence |` so the
+                 generate workflow can parse the use case (column 2) and the backtick-wrapped target
+                 (column 3). Use this shape:
+
+                 ```markdown
+                 Re-checked every cheatsheet against your current repos and today's docs. These changed in
+                 MEANING since they were last written (cosmetic churn is excluded). Comment with the
+                 number(s) you want me to refresh.
+
+                 | # | Cheatsheet (use case) | Target | What changed in meaning | Evidence |
+                 |---|---|---|---|---|
+                 | 1 | <use case> | `<target>` | <one line: what idiom/learning/rule shifted and why> | `owner/repo` (public; private generalized) |
+                 | 2 | ... | ... | ... | ... |
+
+                 Reply on THIS open issue (as the repo owner) with the numbers to refresh — e.g. "1 and 2".
+                 Your comment triggers the generate workflow, which regenerates each chosen sheet and opens
+                 one PR per sheet; no local command needed.
+                 ```
 
             ## Finish
-            - If NO sheet changed materially, open zero PRs and print a one-line "nothing to refresh".
-            - Report: sheets checked, PRs opened (with branch names), and any skipped duplicates.
+            - If NO sheet drifted meaningfully (or a duplicate refresh issue already exists), open NO issue
+              and print a one-line "nothing to refresh this month".
+            - Report: sheets checked, sheets flagged as meaningfully drifted, the issue number opened (or
+              none), and any skipped duplicate.

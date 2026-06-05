@@ -1,9 +1,11 @@
 name: "Cheatsheet generate from selection"
 
 # Closes the loop end-to-end in the GitHub web UI (I-2 O-6): when the repo OWNER
-# comments a topic selection (e.g. "1 and 3") on an open cheatsheet-recommendations
-# issue, generate each chosen sheet via the I-1 `cheatsheet` skill and open ONE
-# human-reviewed PR per selected topic. No local step, no auto-merge.
+# comments a topic selection (e.g. "1 and 3") on an open cheatsheet issue, generate
+# each chosen sheet via the I-1 `cheatsheet` skill and open ONE human-reviewed PR
+# per selected topic. No local step, no auto-merge. Serves BOTH issue kinds:
+#   - "Cheatsheet recommendations …" → generate NEW sheets (skip any already covered)
+#   - "Cheatsheet refresh …"         → REGENERATE the selected existing sheets
 #
 # CAVEAT — issue_comment workflows ALWAYS run the copy on the DEFAULT BRANCH (main),
 # never a feature branch. So:
@@ -36,7 +38,7 @@ concurrency:
 
 jobs:
   generate:
-    # issue_comment path: owner-only, open recommendations issue, not a PR comment.
+    # issue_comment path: owner-only, open recommendations/refresh issue, not a PR comment.
     # workflow_dispatch path always runs (manual testing).
     if: >
       github.event_name == 'workflow_dispatch' ||
@@ -44,7 +46,8 @@ jobs:
        github.event.issue.pull_request == null &&
        github.event.issue.state == 'open' &&
        github.event.comment.user.login == github.repository_owner &&
-       startsWith(github.event.issue.title, 'Cheatsheet recommendations'))
+       (startsWith(github.event.issue.title, 'Cheatsheet recommendations') ||
+        startsWith(github.event.issue.title, 'Cheatsheet refresh')))
     runs-on: ubuntu-latest
     timeout-minutes: 60       # up to ~3 sheets generated from scratch (tunable)
     env:
@@ -77,9 +80,11 @@ jobs:
             --allowedTools "Read,Glob,Grep,Edit,Write,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(git status:*),Bash(git diff:*),Bash(git switch:*),Bash(git checkout:*),Bash(git restore:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(uv run:*)"
           prompt: |
             You are the selection-triggered generate agent for this cheatsheet repo (intent I-2, outcome O-6).
-            A user picked one or more recommended topics by commenting on a cheatsheet-recommendations
-            issue. Your job: generate each chosen sheet and open ONE pull request per topic. The whole
-            loop must complete in the GitHub web UI — you NEVER merge, approve, or close anything.
+            A user picked one or more topics by commenting on a cheatsheet issue. That issue is EITHER a
+            "Cheatsheet recommendations …" issue (the picks are NEW sheets to generate) OR a
+            "Cheatsheet refresh …" issue (the picks are EXISTING sheets to regenerate). Your job: generate
+            or regenerate each chosen sheet and open ONE pull request per topic. The whole loop must
+            complete in the GitHub web UI — you NEVER merge, approve, or close anything.
 
             ## Orientation (read first)
             - Read `CLAUDE.md`, `specs/CONSTITUTION.md`, and `.claude/skills/cheatsheet/SKILL.md`.
@@ -90,17 +95,22 @@ jobs:
             - Capture today's date: `date -u +%Y-%m-%d`. You start on the repo's default branch.
 
             ## Resolve the selection (do this before anything else)
-            - The recommendations issue number is in `$ISSUE_NUMBER`. Read it (default token, THIS repo):
+            - The issue number is in `$ISSUE_NUMBER`. Read it (default token, THIS repo):
               `gh issue view "$ISSUE_NUMBER" --json title,body,state`.
-            - CONFIRM the issue state is OPEN and its title begins with `Cheatsheet recommendations`.
-              If either check fails, STOP immediately and open no PR.
-            - The issue body contains a markdown table whose columns are `| # | Topic (use case) | Target | ... |`.
+            - CONFIRM the issue state is OPEN and its title begins with EITHER `Cheatsheet recommendations`
+              OR `Cheatsheet refresh`. If either check fails, STOP immediately and open no PR.
+            - Determine the MODE from the title:
+              - title starts with `Cheatsheet recommendations` → **generate mode** (selected rows are NEW sheets).
+              - title starts with `Cheatsheet refresh` → **refresh mode** (selected rows are EXISTING sheets to regenerate).
+            - The issue body contains a markdown table. In BOTH issue kinds column 2 is the use case and
+              column 3 is the backtick-wrapped target (recommendations: `| # | Topic (use case) | Target | … |`;
+              refresh: `| # | Cheatsheet (use case) | Target | … |`). Ignore the remaining columns.
             - The selected numbers come from `$SELECTION_COMMENT` (when triggered by a comment) or
               `$DISPATCH_SELECTION` (when run manually). Parse whichever is non-empty for integers;
               accept forms like "1 and 3", "1,3", "1 & 3", "1 3".
-            - For each selected number, read THAT table row and extract the Topic (use case, column 2)
-              and Target (column 3, the backtick-wrapped value). These are the inputs to the SKILL.md
-              generation procedure. Skip any selected number that has no matching row and report it.
+            - For each selected number, read THAT table row and extract the use case (column 2) and
+              Target (column 3, the backtick-wrapped value). These are the inputs to the SKILL.md
+              procedure. Skip any selected number that has no matching row and report it.
               NEVER invent a topic that is not in the table.
 
             ## Two-token rule (NON-NEGOTIABLE security boundary)
@@ -117,26 +127,37 @@ jobs:
             - NEVER put a PRIVATE repo's name/slug/URL or verbatim code in any committed file or PR text.
               Convey private-sourced patterns generalized. Public repos may be cited.
 
-            ## Task — generate each selected topic, one PR per topic
-            For each resolved `(use case, target)`:
-            1. Compute the slug exactly as SKILL.md defines it. Guard against duplicates BEFORE writing:
-               - `gh pr list --state open --search "generate <slug>" --json headRefName` — if an open PR
-                 already targets this topic's branch, SKIP it (no duplicate).
-               - If `cheatsheets/<slug>.md` already exists on the default branch, SKIP and report
-                 "already covered" — refreshing existing sheets is the monthly job's responsibility,
-                 not this one.
-            2. `git switch -c auto/generate/<slug>` off the default branch.
+            ## Task — produce each selected topic, one PR per topic
+            The branch name, duplicate guard, existence check, index handling, and PR title all depend
+            on the MODE resolved above. For each resolved `(use case, target)`:
+            1. Compute the slug exactly as SKILL.md defines it (the same rule maps an existing sheet's
+               `<use case> with <target>` H1 back to its `cheatsheets/<slug>.md` filename). Then, by MODE:
+               - **generate mode** — branch `auto/generate/<slug>`. Duplicate guard:
+                 `gh pr list --state open --search "generate <slug>" --json headRefName` — if an open PR
+                 already targets this branch, SKIP. If `cheatsheets/<slug>.md` already exists on the
+                 default branch, SKIP and report "already covered" (refreshing it is the refresh path's
+                 job, not a recommendations selection).
+               - **refresh mode** — branch `auto/refresh/<slug>`. Duplicate guard:
+                 `gh pr list --state open --search "refresh <slug>" --json headRefName` — if an open PR
+                 already targets this branch, SKIP. The sheet MUST already exist: if
+                 `cheatsheets/<slug>.md` is NOT present on the default branch, SKIP and report
+                 "no such sheet to refresh" (never create a new sheet in refresh mode).
+            2. `git switch -c <branch>` off the default branch.
             3. Run the SKILL.md workflow against TODAY's repos (cross-repo reads) and TODAY's docs
-               (context7 if available, else WebSearch + WebFetch of official docs/changelog). Write
-               `cheatsheets/<slug>.md` in the full required structure.
-            4. Run `uv run scripts/register_cheatsheet.py` and stage `index.md` (a new sheet always
-               adds an index row, so index.md will always change here).
-            5. Commit, `git push -u origin auto/generate/<slug>`, then `gh pr create` titled
-               `feat(cheatsheet): add <slug>` with a body that SUMMARIZES what the sheet covers (use
-               case + target), the doc source it was grounded in, and a `Closes selection from #$ISSUE_NUMBER`
-               line — NOT a raw diff, and NEVER any private repo identifier/content.
+               (context7 if available, else WebSearch + WebFetch of official docs/changelog). Write the
+               full required structure to `cheatsheets/<slug>.md` (generate mode creates it; refresh mode
+               overwrites the existing file).
+            4. Run `uv run scripts/register_cheatsheet.py`. Stage `index.md` ONLY if it actually changed —
+               in generate mode a new sheet always adds a row, so it will; in refresh mode it changes only
+               if the sheet's title changed.
+            5. Commit, `git push -u origin <branch>`, then `gh pr create` with a body that SUMMARIZES the
+               change (use case + target, the doc source it was grounded in; in refresh mode, what idiom/
+               Learning/Agent rule shifted and why) and a `Closes selection from #$ISSUE_NUMBER` line —
+               NOT a raw diff, and NEVER any private repo identifier/content. PR title by MODE:
+               - generate mode: `feat(cheatsheet): add <slug>`
+               - refresh mode:  `chore(cheatsheet): refresh <slug>`
             6. `git switch <default-branch>` and `git restore .` before the next topic so each PR
-               contains only its own sheet + its own index.md row.
+               contains only its own sheet (+ its own index.md row when one changed).
 
             ## Finish
             - If NO topic resolved (all skipped/duplicate/unmatched), open zero PRs and print a one-line
