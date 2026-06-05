@@ -17,6 +17,7 @@
 - [Notebook kernels with ipykernel](cheatsheets/notebooks-ipykernel.md)
 - [Package & project management with uv](cheatsheets/package-management-uv.md)
 - [Self-contained scripts with uv](cheatsheets/self-contained-scripts-uv.md)
+- [Self-maintenance with anthropics/claude-code-action](cheatsheets/self-maintenance-claude-code-action.md)
 - [SQL & relational access with SQLAlchemy](cheatsheets/sql-sqlalchemy.md)
 - [Static sites with Astro](cheatsheets/static-sites-astro.md)
 - [Testing with pytest](cheatsheets/testing-pytest.md)
