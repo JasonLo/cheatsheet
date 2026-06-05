@@ -15,6 +15,7 @@
 - [Linting & formatting with Ruff](cheatsheets/linting-formatting-ruff.md)
 - [LLM API clients with the OpenAI SDK](cheatsheets/llm-client-openai.md)
 - [Notebook kernels with ipykernel](cheatsheets/notebooks-ipykernel.md)
+- [Package management + JS toolchain with bun](cheatsheets/package-management-js-toolchain-bun.md)
 - [Package & project management with uv](cheatsheets/package-management-uv.md)
 - [Self-contained scripts with uv](cheatsheets/self-contained-scripts-uv.md)
 - [Self-maintenance with anthropics/claude-code-action](cheatsheets/self-maintenance-claude-code-action.md)
