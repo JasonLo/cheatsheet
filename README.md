@@ -10,6 +10,25 @@ scheduled GitHub Actions then keep the collection current without you asking.
 
 See [`index.md`](index.md) for the current collection.
 
+## Installation
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JasonLo/cheatsheet/main/scripts/install.sh | sh
+```
+
+This clones the repo to `~/.cheatsheet` and adds an [`@` import](https://code.claude.com/docs/en/memory)
+of `index.md` to your user-level `~/.claude/CLAUDE.md`. The import is what actually
+gets the index **loaded into your agent's context** at session start — a bare URL
+in `CLAUDE.md` doesn't work, because Claude Code never auto-fetches it. With the
+index loaded, the agent knows which sheets exist and reads the relevant
+`cheatsheets/<slug>.md` before acting.
+
+Re-run the one-liner any time to pull the latest sheets (it `git pull`s and
+refreshes the block in place). To remove everything, run `~/.cheatsheet/scripts/uninstall.sh`.
+
+Override the install location or target file with the `CHEATSHEET_DIR` and
+`CLAUDE_MD` environment variables.
+
 ## Generate a cheatsheet
 
 Invoke the `cheatsheet` skill in Claude Code with a use case and an explicit target:
