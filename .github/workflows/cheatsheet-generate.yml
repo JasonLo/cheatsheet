@@ -25,9 +25,10 @@ on:
         description: 'Topic numbers to generate, e.g. "1 and 3"'
         required: true
 
-permissions:                # least privilege: open PRs in THIS repo only (no issue writes)
+permissions:                # least privilege: open PRs + ack the triggering comment
   contents: write
   pull-requests: write
+  issues: write             # react 👀 to the comment that kicked this run off
   id-token: write           # OIDC — required by claude-code-action
 
 concurrency:
@@ -60,6 +61,16 @@ jobs:
       SELECTION_COMMENT: ${{ github.event.comment.body }}
       DISPATCH_SELECTION: ${{ inputs.selection }}
     steps:
+      - name: Acknowledge the triggering comment with 👀
+        # issue_comment path only — the workflow_dispatch path has no comment to react to.
+        # Signals "received, working on it" the moment the gated job kicks off.
+        if: github.event_name == 'issue_comment'
+        run: |
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content=eyes
+
       - name: Preflight — require the read-only scan token
         run: |
           if [ -z "${GH_SCAN_TOKEN}" ]; then
