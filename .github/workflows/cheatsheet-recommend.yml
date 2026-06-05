@@ -1,0 +1,93 @@
+name: "Cheatsheet weekly recommender"
+
+# Scans the user's past-7-day GitHub activity, finds newly-adopted frameworks
+# not yet covered, and opens ONE lightweight proposal-stub PR per gap (I-2).
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"   # 04:17 UTC every Monday
+  workflow_dispatch: {}     # always allow manual runs for testing
+
+permissions:                # least privilege: open PRs in THIS repo only
+  contents: write
+  pull-requests: write
+  id-token: write           # OIDC — required by claude-code-action
+
+concurrency:
+  group: "cheatsheet-recommend"
+  cancel-in-progress: false
+
+jobs:
+  recommend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30       # bound the run (tunable)
+    env:
+      GH_TOKEN: ${{ github.token }}                  # PR writes target THIS repo
+      GH_SCAN_TOKEN: ${{ secrets.GH_SCAN_TOKEN }}    # read-only PAT for cross-repo activity scan
+    steps:
+      - name: Preflight — require the read-only scan token
+        run: |
+          if [ -z "${GH_SCAN_TOKEN}" ]; then
+            echo "::error::GH_SCAN_TOKEN secret is not set. Add a read-only fine-grained PAT (contents+metadata, all repos) named GH_SCAN_TOKEN."
+            exit 1
+          fi
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6 — bump the SHA deliberately
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1 — bump the SHA deliberately
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Read,Glob,Grep,Write,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(git status:*),Bash(git switch:*),Bash(git restore:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*)"
+          prompt: |
+            You are the weekly gap-recommender for this cheatsheet repo (intent I-2).
+
+            ## Orientation (read first)
+            - Read `CLAUDE.md`, `specs/CONSTITUTION.md`, and `.claude/skills/cheatsheet/SKILL.md`.
+            - List what already exists: every `cheatsheets/*.md` (and `index.md`) and every open
+              `proposals/*.md`. These define what is ALREADY covered or ALREADY proposed.
+            - Resolve the login: `gh api user --jq .login`. Compute the window:
+              `date -u -d '7 days ago' +%Y-%m-%d` (start) and `date -u +%Y-%m-%d` (today).
+
+            ## Two-token rule (NON-NEGOTIABLE security boundary)
+            - CROSS-REPO READS: ALWAYS prefix with the read-only token, e.g.
+              `GH_TOKEN=$GH_SCAN_TOKEN gh search commits --author <login> --committer-date '>=<start>' --json repository,sha,commit`.
+            - WRITES (`git push`, `gh pr create`) in THIS repo: plain `gh`/`git` (default token).
+            - NEVER read other repos with the default token; NEVER write with the scan token.
+
+            ## Privacy (Constitution P-7) — applies to every PR title, body, and stub file
+            - Resolve each touched repo's visibility before citing it.
+            - NEVER name/slug/URL a PRIVATE repo or quote its code in any stub or PR text; generalize.
+              Public repos may be cited as evidence.
+
+            ## Task — find gaps, open one proposal-stub PR each
+            1. From the past-7-day commits/activity, infer the libraries, frameworks, and tools the
+               user newly adopted or worked heavily in this week.
+            2. Keep only topics that are (a) genuinely cheatsheet-worthy, (b) NOT already a
+               `cheatsheets/*.md`, and (c) NOT already a `proposals/*.md` or an open proposal PR
+               (`gh pr list --state open --search "proposal"`). Drop everything else.
+            3. For EACH surviving topic, on a fresh branch `auto/proposal/<slug>` off the default branch:
+               - Write `proposals/<slug>.md` as a LIGHTWEIGHT STUB (do NOT generate a full cheatsheet,
+                 do NOT touch `index.md`):
+
+                 ```markdown
+                 # Proposed cheatsheet: <Use case> with <target>
+
+                 - **Use case:** <short use case>
+                 - **Target:** `<target>`
+                 - **Why now:** surfaced from <login>'s GitHub activity in the past week —
+                   <one line on what they did with it> (public evidence: `owner/repo` / commit; private sources generalized per P-7)
+                 - **Generate with:** `/cheatsheet <use case> --target <target>`
+                 ```
+               - Commit, `git push -u origin auto/proposal/<slug>`, then `gh pr create` titled
+                 `proposal(cheatsheet): <topic>` with a body restating why it surfaced and the generate command.
+               - `git switch <default-branch>` and `git restore .` before the next topic, so each
+                 proposal is its own PR.
+
+            ## Finish
+            - If no new topic qualifies, open zero PRs and print "no new cheatsheet topics this week".
+            - Report: window scanned, topics considered, PRs opened (with branch names), and skips.
