@@ -19,8 +19,13 @@ Non-negotiable project principles. Every other `spec-` skill validates its outpu
 
 - **P-4:** The repository root SHALL contain an `index.md` that lists every cheatsheet in the repository.
 
+## Security
+
+- **P-7:** Generated cheatsheets and any committed artifact SHALL NOT disclose the name, owner/repo slug, or URL of a private repository, NOR quote or reproduce code or content sourced from a private repository. WHEN a usage pattern is sourced from a private repository, the project SHALL convey it in redacted, generalized form — without the repository identifier and without verbatim private content. Public-repository identifiers and content MAY be cited.
+
 ## Amendments
 
 - **2026-06-05** — Initial constitution ratified.
 - **2026-06-05** — Added P-5 (Stack choice): GitHub data accessed via the `gh` CLI, no direct API calls or SDK dependency. Reason: keep GitHub access aligned with the project's minimal-tooling stance (P-1/P-3).
 - **2026-06-05** — Added P-6 (Architecture): skills handle abstract/judgment-heavy tasks, code handles concrete deterministic implementation. Reason: route each task to the mechanism suited to it.
+- **2026-06-05** — Added P-7 (Security): generated artifacts never disclose a private repository's name/slug/URL or quote its code/content; private-sourced patterns are conveyed redacted and generalized. Reason: mining the user's own repos must not leak anything from the private ones.

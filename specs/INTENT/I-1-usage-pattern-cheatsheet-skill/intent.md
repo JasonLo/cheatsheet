@@ -6,10 +6,10 @@ status: complete
 opened: 2026-06-05
 closed: 2026-06-05
 superseded_by: null
-verdict_outcomes_passed: 7
+verdict_outcomes_passed: 8
 verdict_outcomes_passed_by_test: 0
-verdict_outcomes_total: 7
-verdict_checked_at: 2026-06-05T18:49:40Z
+verdict_outcomes_total: 8
+verdict_checked_at: 2026-06-05T19:15:31Z
 ---
 
 # Intent: Usage-pattern cheatsheet skill
@@ -36,6 +36,8 @@ Across my own GitHub repositories I keep reusing how I first learned a library o
   - [test: agent:specs/INTENT/I-1-usage-pattern-cheatsheet-skill/checks/agent-actionable-rules.md]
 - **WHEN** a cheatsheet file is written **THE SYSTEM SHALL** add an entry for it to the repository-root index.md.
   - [test: agent:specs/INTENT/I-1-usage-pattern-cheatsheet-skill/checks/registers-in-index.md]
+- **WHILE** writing the cheatsheet **THE SYSTEM SHALL** exclude the name, owner/repo slug, URL, and verbatim code or content of any private repository — citing and quoting only public sources, and conveying patterns learned from private repositories in redacted, generalized form (Constitution P-7).
+  - [test: agent:specs/INTENT/I-1-usage-pattern-cheatsheet-skill/checks/no-private-repo-leak.md]
 
 ## Non-Goals
 - A syntax/API quick-reference — altitude is conceptual usage and intent, not signatures.
@@ -52,8 +54,10 @@ Across my own GitHub repositories I keep reusing how I first learned a library o
 - Cheatsheets are markdown files registered in the repository-root `index.md` (P-4).
 - Favor the simplest workflow that produces a useful cheatsheet (P-3).
 - Agent-directed content lives inside the same single markdown cheatsheet — no separate machine-readable artifact per topic (P-3/P-4).
+- No private repository may be disclosed or reproduced in the cheatsheet (P-7); repo visibility is resolved via `gh` and only public sources are cited or quoted.
 
 ## Change Log
 - **2026-06-05** — Initial draft.
 - **2026-06-05** — Added a required current reference code snippet to the cheatsheet, and a concise-point-form invariant that filters detail to future-use must-knows/tips or learning value. Reason: make cheatsheets quicker to scan and ground a "what does it look like today" snippet in current practice.
 - **2026-06-05** — Made cheatsheets AI-agent-friendly: added an outcome requiring an "Agent rules" section of imperative ALWAYS/NEVER point-form guardrails (Claude Code research shows imperative rules are load-bearing, frontmatter is not), plus non-goals excluding cargo-cult metadata and auto-wiring into consuming repos. Reason: let a coding agent apply a cheatsheet's corrections directly, not just a human scanning it.
+- **2026-06-05** — Added a no-private-repo-leak outcome and constraint: the cheatsheet must exclude any private repo's name/slug/URL and verbatim content, citing only public sources. Reason: enforce Constitution P-7 at the feature level after the principle was ratified.

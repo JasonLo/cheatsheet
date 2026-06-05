@@ -32,8 +32,12 @@ If `--target` is missing, ask for it once before proceeding.
    - Fetch candidate file contents:
      `gh api repos/<login>/<repo>/contents/<path> --jq .content | base64 -d`
    Judge which files genuinely show the use case; keep the handful that best
-   represent the user's idioms, imports, and conventions. Note the file paths —
-   you will cite them in the cheatsheet.
+   represent the user's idioms, imports, and conventions.
+   - **Tag each kept file's repo visibility (Constitution P-7).** Resolve it once
+     per repo: `gh repo view <login>/<repo> --json visibility -q .visibility`
+     (`PUBLIC` vs anything else). Record visibility alongside each file path.
+   Note the file paths — you will cite **public** sources in the cheatsheet, and
+   **never** the name, slug, URL, or verbatim content of a **private** repo.
 
 3. **Establish current best practice.** Pull the target's current official
    documentation via context7: `resolve-library-id` then `query-docs` scoped to
@@ -77,7 +81,10 @@ If `--target` is missing, ask for it once before proceeding.
    ## Typical usage patterns
 
    - Recurring shapes of how you use <target> today — one bullet each: the
-     pattern, when you reach for it, and a real-file cite (`owner/repo:path`).
+     pattern, when you reach for it, and a real-file cite (`owner/repo:path`)
+     **only when the source repo is public**; for a private-repo source, drop
+     the cite entirely and describe the pattern generically (P-7) — never the
+     repo name/slug/URL or verbatim private code.
      One line per bullet where you can. Conceptual, not a syntax dump.
 
    ## Learnings
@@ -87,7 +94,8 @@ If `--target` is missing, ask for it once before proceeding.
    signatures — terse, one to two lines:
 
    - **<Old mental model>** → **<New mental model>.** The why + what now
-     expresses the same intent. (seen in `owner/repo:path`)
+     expresses the same intent. (seen in `owner/repo:path` — public sources
+     only; omit the parenthetical for private-repo sources per P-7)
 
    ## Agent rules
 
@@ -127,3 +135,7 @@ If `--target` is missing, ask for it once before proceeding.
 - Any deterministic helper is a self-contained `uv`/PEP-723 script (P-1/P-2);
   this skill currently shells out only to `scripts/register_cheatsheet.py`.
 - Favor the simplest path that yields a useful cheatsheet (P-3).
+- **Never leak a private repo (P-7).** The written cheatsheet MUST NOT contain
+  the name, owner/repo slug, or URL of a private repository, nor quote or
+  reproduce its code/content. Patterns learned from private repos are conveyed
+  redacted and generalized; only public sources may be cited verbatim.
