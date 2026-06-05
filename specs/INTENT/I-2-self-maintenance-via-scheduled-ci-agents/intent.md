@@ -15,7 +15,7 @@ verdict_checked_at: 2026-06-05T21:15:00Z
 # Intent: Self-maintenance via scheduled CI agents
 
 - **Author:** Jason Lo
-- **Last updated:** 2026-06-05
+- **Last updated:** 2026-06-05 (refined — weekly recommender opens one top-3 issue instead of per-suggestion PRs)
 
 ## Problem
 The README promises a cheatsheet that "maintains itself" and "proactively proposes new cheatsheets," but today every cheatsheet is produced by a one-shot, manually-invoked skill (I-1). Nothing re-mines the user's repos as their code drifts, nothing detects newly-adopted frameworks the collection doesn't yet cover, and there is no CI. The self-maintenance the product describes does not exist.
@@ -23,9 +23,9 @@ The README promises a cheatsheet that "maintains itself" and "proactively propos
 ## Outcome
 - **WHEN** the monthly scheduled workflow runs **THE SYSTEM SHALL** re-mine the user's repositories via the `gh` CLI, regenerate each existing cheatsheet against current documentation, and open exactly one pull request per materially-changed cheatsheet — opening no PR for a cheatsheet whose content is unchanged.
   - [test: agent:specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/monthly-refresh-pr-per-sheet.md]
-- **WHEN** the weekly scheduled workflow runs **THE SYSTEM SHALL** scan the user's GitHub activity from the past 7 days, cross-reference existing cheatsheets, and open one proposal-stub PR adding `proposals/<slug>.md` per newly-adopted framework not already covered — opening no PR when no new topic surfaces.
-  - [test: agent:specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/weekly-proposal-stub-prs.md]
-- **WHILE** a self-maintenance workflow runs **THE SYSTEM SHALL** read cross-repository GitHub data only through a read-only token via the `gh` CLI, and perform commits/PRs only within this repository via the default `GITHUB_TOKEN`.
+- **WHEN** the weekly scheduled workflow runs **THE SYSTEM SHALL** scan the user's GitHub activity from the past 7 days, cross-reference existing cheatsheets, and open a single issue presenting at most the top 3 highest-value newly-adopted frameworks not already covered as a markdown table for the user to choose from — opening no issue when no new topic surfaces.
+  - [test: agent:specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/weekly-top3-recommendation-issue.md]
+- **WHILE** a self-maintenance workflow runs **THE SYSTEM SHALL** read cross-repository GitHub data only through a read-only token via the `gh` CLI, and perform writes (commits, pull requests, and issues) only within this repository via the default `GITHUB_TOKEN`.
   - [test: agent:specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/least-privilege-token-split.md]
 - **WHILE** producing any pull-request content **THE SYSTEM SHALL** exclude every private repository's name/slug/URL and verbatim content, conveying private-sourced patterns in generalized form (Constitution P-7).
   - [test: agent:specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/no-private-repo-leak-in-prs.md]
@@ -34,10 +34,10 @@ The README promises a cheatsheet that "maintains itself" and "proactively propos
 
 ## Non-Goals
 - Auto-merging PRs — every change is human-reviewed.
-- The weekly job generating *full* cheatsheets — it produces a stub proposal; full generation is the existing I-1 skill, run after approval.
+- The weekly job generating *full* cheatsheets — it only recommends; full generation is the existing I-1 skill, run after the user picks from the issue.
 - A correctness score, dashboard, or metrics over the user's repos.
 - Replacing the I-1 generation engine — I-2 only automates its invocation and adds gap detection.
-- Indexing `proposals/` stubs in `index.md` (P-4 indexes cheatsheets only).
+- The weekly job writing files or creating any branch/PR — it opens one issue for the user to choose from; nothing lands until the user runs the I-1 skill.
 
 ## Constraints
 - GitHub data via `gh` CLI only (P-5); cross-repo reads use a read-only PAT secret, repo writes use the default `GITHUB_TOKEN`.
@@ -47,3 +47,4 @@ The README promises a cheatsheet that "maintains itself" and "proactively propos
 
 ## Change Log
 - **2026-06-05** — Initial draft.
+- **2026-06-05** — Refined O-2: the weekly recommender now opens a single issue with a top-3 markdown table for the user to choose from, instead of one proposal-stub PR per topic (capped at 3, mirroring I-1's top-3 curation). Reworded O-3 so "writes" covers issues; replaced the proposals-indexing non-goal with a no-files/no-PR non-goal. Reason: per-suggestion PRs are overkill and unlimited recommendations dilute signal.

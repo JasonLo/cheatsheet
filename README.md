@@ -30,18 +30,17 @@ patterns learned there are generalized (Constitution P-7).
 ## Self-maintenance (GitHub Actions)
 
 Two scheduled [`anthropics/claude-code-action`](cheatsheets/self-maintenance-claude-code-action.md)
-workflows keep the collection fresh. Both open PRs for review — nothing is
-auto-merged.
+workflows keep the collection fresh. The monthly job opens PRs for review; the
+weekly job opens one recommendation issue. Nothing is auto-merged or auto-generated.
 
 - **Monthly refresh** — [`.github/workflows/cheatsheet-refresh.yml`](.github/workflows/cheatsheet-refresh.yml)
   re-mines your repos, regenerates every cheatsheet against today's docs, and opens
   **one PR per materially-changed sheet** (a date-only change is ignored; nothing
   changed means no PR).
 - **Weekly recommender** — [`.github/workflows/cheatsheet-recommend.yml`](.github/workflows/cheatsheet-recommend.yml)
-  scans your last 7 days of GitHub activity, cross-references the existing sheets,
-  and opens **one lightweight proposal-stub PR** (`proposals/<slug>.md`) per
-  newly-adopted framework not yet covered — including the exact command to generate
-  the full sheet once you approve it.
+  scans your last 7 days of GitHub activity, cross-references the existing sheets, and
+  opens **one issue with a top-3 table** of newly-adopted, uncovered frameworks. You
+  reply with the ones you want, then run `/cheatsheet …` to generate them.
 
 ### Setup
 
