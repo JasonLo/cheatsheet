@@ -13,6 +13,7 @@ _Grounded in JasonLo's repos as of 2026-06-05; current practice per uv official 
 - One-line docstrings for simple functions; avoid unnecessary comments
 - Guard clauses over deep nesting; principle of parsimony; flat layout over `src/`
 - Check context7 MCP / official docs for current syntax before using a library
+- Inside a worktree, "merge" means the full ritual: commit → rebase onto `main` → `--ff-only` merge into `main` → remove the worktree and delete the branch → push `main`
 ```
 
 ## Typical usage patterns
