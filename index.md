@@ -23,6 +23,7 @@
 - [Static sites with Astro](cheatsheets/static-sites-astro.md)
 - [Testing with pytest](cheatsheets/testing-pytest.md)
 - [Time-series data with InfluxDB](cheatsheets/timeseries-influxdb.md)
+- [TUI applications in TypeScript with opentui](cheatsheets/tui-applications-in-typescript-opentui.md)
 - [Type checking with ty](cheatsheets/type-checking-ty.md)
 - [Validation with Pydantic v2](cheatsheets/validation-pydantic.md)
 - [Vector search with pgvector](cheatsheets/vector-search-pgvector.md)
