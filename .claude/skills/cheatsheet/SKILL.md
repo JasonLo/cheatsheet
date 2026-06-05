@@ -29,8 +29,8 @@ If `--target` is missing, ask for it once before proceeding.
    code for the target and gather the most relevant files:
    - `gh search code --owner <login> "<target>" --limit 50 --json repository,path`
    - When useful, enumerate repos first: `gh repo list <login> --limit 200 --json name,pushedAt`
-   - Fetch candidate file contents:
-     `gh api repos/<login>/<repo>/contents/<path> --jq .content | base64 -d`
+   - Fetch candidate file contents (raw, no decode step needed):
+     `gh api repos/<login>/<repo>/contents/<path> -H "Accept: application/vnd.github.raw"`
    Judge which files genuinely show the use case; keep the handful that best
    represent the user's idioms, imports, and conventions.
    - **Tag each kept file's repo visibility (Constitution P-7).** Resolve it once

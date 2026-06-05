@@ -82,6 +82,11 @@ jobs:
         with:
           fetch-depth: 0      # full history so per-topic branches fork cleanly off main
 
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8 — bump the SHA deliberately
+        # `uv run scripts/register_cheatsheet.py` (step 4 below) needs uv + Python on PATH;
+        # the runner ships neither, so set it up before the agent runs. uv fetches the
+        # script's required Python (>=3.14) on demand.
+
       - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1 — bump the SHA deliberately
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
