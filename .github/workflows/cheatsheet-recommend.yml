@@ -78,13 +78,15 @@ jobs:
                  Based on your GitHub activity from <start> to <today>, here are the top cheatsheet
                  candidates not yet covered. Comment with the number(s) you want me to add.
 
-                 | # | Topic (use case) | Target | Why now (your recent activity) | Evidence | Generate with |
-                 |---|---|---|---|---|---|
-                 | 1 | <use case> | `<target>` | <one line> | `owner/repo` (public; private generalized) | `/cheatsheet <use case> --target <target>` |
-                 | 2 | ... | ... | ... | ... | ... |
-                 | 3 | ... | ... | ... | ... | ... |
+                 | # | Topic (use case) | Target | Why now (your recent activity) | Evidence |
+                 |---|---|---|---|---|
+                 | 1 | <use case> | `<target>` | <one line> | `owner/repo` (public; private generalized) |
+                 | 2 | ... | ... | ... | ... |
+                 | 3 | ... | ... | ... | ... |
 
-                 Reply with the numbers to add (e.g. "1 and 3"); I'll generate those cheatsheets.
+                 Reply on THIS open issue (as the repo owner) with the numbers to add — e.g. "1 and 3".
+                 Your comment triggers the generate workflow, which opens one PR per chosen sheet; no
+                 local command needed.
                  ```
 
             ## Finish
