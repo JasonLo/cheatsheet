@@ -1,9 +1,11 @@
 name: "Cheatsheet generate from selection"
 
-# Closes the loop end-to-end in the GitHub web UI (I-2 O-6): when the repo OWNER
+# Closes the loop end-to-end in the GitHub web UI (I-2 O-6/O-7): when the repo OWNER
 # comments a topic selection (e.g. "1 and 3") on an open cheatsheet issue, generate
-# each chosen sheet via the I-1 `cheatsheet` skill and open ONE human-reviewed PR
-# per selected topic. No local step, no auto-merge. Serves BOTH issue kinds:
+# each chosen sheet via the I-1 `cheatsheet` skill and open ONE human-reviewed PR for
+# the whole run that bundles every chosen sheet. The PR body carries `Closes #<issue>`,
+# so merging it auto-closes the originating issue (O-7). No local step, no auto-merge.
+# Serves BOTH issue kinds:
 #   - "Cheatsheet recommendations …" → generate NEW sheets (skip any already covered)
 #   - "Cheatsheet refresh …"         → REGENERATE the selected existing sheets
 #
@@ -99,8 +101,10 @@ jobs:
             A user picked one or more topics by commenting on a cheatsheet issue. That issue is EITHER a
             "Cheatsheet recommendations …" issue (the picks are NEW sheets to generate) OR a
             "Cheatsheet refresh …" issue (the picks are EXISTING sheets to regenerate). Your job: generate
-            or regenerate each chosen sheet and open ONE pull request per topic. The whole loop must
-            complete in the GitHub web UI — you NEVER merge, approve, or close anything.
+            or regenerate every chosen sheet and open ONE pull request for the whole run that bundles
+            ALL of them. The whole loop must complete in the GitHub web UI — you NEVER merge, approve,
+            or close anything yourself (merging the single PR auto-closes the issue via the `Closes #N`
+            keyword you put in its body — that is the only closing mechanism, and the human triggers it).
 
             ## Orientation (read first)
             - Read `CLAUDE.md`, `specs/CONSTITUTION.md`, and `.claude/skills/cheatsheet/SKILL.md`.
@@ -143,40 +147,48 @@ jobs:
             - NEVER put a PRIVATE repo's name/slug/URL or verbatim code in any committed file or PR text.
               Convey private-sourced patterns generalized. Public repos may be cited.
 
-            ## Task — produce each selected topic, one PR per topic
-            The branch name, duplicate guard, existence check, index handling, and PR title all depend
-            on the MODE resolved above. For each resolved `(use case, target)`:
-            1. Compute the slug exactly as SKILL.md defines it (the same rule maps an existing sheet's
-               `<use case> with <target>` H1 back to its `cheatsheets/<slug>.md` filename). Then, by MODE:
-               - **generate mode** — branch `auto/generate/<slug>`. Duplicate guard:
-                 `gh pr list --state open --search "generate <slug>" --json headRefName` — if an open PR
-                 already targets this branch, SKIP. If `cheatsheets/<slug>.md` already exists on the
-                 default branch, SKIP and report "already covered" (refreshing it is the refresh path's
-                 job, not a recommendations selection).
-               - **refresh mode** — branch `auto/refresh/<slug>`. Duplicate guard:
-                 `gh pr list --state open --search "refresh <slug>" --json headRefName` — if an open PR
-                 already targets this branch, SKIP. The sheet MUST already exist: if
-                 `cheatsheets/<slug>.md` is NOT present on the default branch, SKIP and report
-                 "no such sheet to refresh" (never create a new sheet in refresh mode).
-            2. `git switch -c <branch>` off the default branch.
-            3. Run the SKILL.md workflow against TODAY's repos (cross-repo reads) and TODAY's docs
-               (context7 if available, else WebSearch + WebFetch of official docs/changelog). Write the
-               full required structure to `cheatsheets/<slug>.md` (generate mode creates it; refresh mode
-               overwrites the existing file).
-            4. Run `uv run scripts/register_cheatsheet.py`. Stage `index.md` ONLY if it actually changed —
-               in generate mode a new sheet always adds a row, so it will; in refresh mode it changes only
-               if the sheet's title changed.
-            5. Commit, `git push -u origin <branch>`, then `gh pr create` with a body that SUMMARIZES the
-               change (use case + target, the doc source it was grounded in; in refresh mode, what idiom/
-               Learning/Agent rule shifted and why) and a `Closes selection from #$ISSUE_NUMBER` line —
-               NOT a raw diff, and NEVER any private repo identifier/content. PR title by MODE:
-               - generate mode: `feat(cheatsheet): add <slug>`
-               - refresh mode:  `chore(cheatsheet): refresh <slug>`
-            6. `git switch <default-branch>` and `git restore .` before the next topic so each PR
-               contains only its own sheet (+ its own index.md row when one changed).
+            ## Task — produce ONE pull request for the whole run, bundling every selected sheet
+            One run → one branch → one PR, carrying every sheet you generate this run. The branch name
+            and PR title depend on the MODE resolved above.
+
+            1. **Pick the run branch (once, off the default branch), by MODE:**
+               - **generate mode** — `auto/generate/from-issue-$ISSUE_NUMBER`
+               - **refresh mode**  — `auto/refresh/from-issue-$ISSUE_NUMBER`
+               Run-level duplicate guard: `gh pr list --state open --head <branch> --json number` — if an
+               open PR already targets this branch, STOP and report "PR already open for this selection"
+               (the concurrency group serializes repeat comments; do not open a second PR). Otherwise
+               `git switch -c <branch>` off the default branch.
+
+            2. **For EACH resolved `(use case, target)`, add its sheet to this one branch:**
+               a. Compute the slug exactly as SKILL.md defines it (the same rule maps an existing sheet's
+                  `<use case> with <target>` H1 back to its `cheatsheets/<slug>.md` filename).
+               b. Per-sheet existence check by MODE:
+                  - **generate mode** — if `cheatsheets/<slug>.md` already exists on the default branch,
+                    SKIP this topic and report "already covered" (refreshing is the refresh path's job).
+                  - **refresh mode** — if `cheatsheets/<slug>.md` is NOT present on the default branch,
+                    SKIP this topic and report "no such sheet to refresh" (never create a new sheet here).
+               c. Run the SKILL.md workflow against TODAY's repos (cross-repo reads) and TODAY's docs
+                  (context7 if available, else WebSearch + WebFetch of official docs/changelog). Write the
+                  full required structure to `cheatsheets/<slug>.md` (generate mode creates it; refresh
+                  mode overwrites the existing file). Do NOT switch branches or commit between topics —
+                  accumulate every sheet on the same working tree.
+
+            3. **Register the index once, after all sheets are written:** run
+               `uv run scripts/register_cheatsheet.py`, then `git add` the new/changed `cheatsheets/*.md`
+               and `index.md` (stage `index.md` only if it actually changed — generate always adds rows;
+               refresh changes it only when a title changed).
+
+            4. **Open exactly ONE PR for the run.** If at least one sheet was written, `git commit` all of
+               it, `git push -u origin <branch>`, then `gh pr create`. PR title by MODE:
+               - generate mode: `feat(cheatsheet): add selected sheets from #$ISSUE_NUMBER`
+               - refresh mode:  `chore(cheatsheet): refresh selected sheets from #$ISSUE_NUMBER`
+               PR body: a short SUMMARY with one bullet/section per bundled sheet (use case + target, the
+               doc source it was grounded in; in refresh mode, what idiom/Learning/Agent rule shifted and
+               why) — NOT a raw diff, and NEVER any private repo identifier/content. End the body with a
+               line that is exactly `Closes #$ISSUE_NUMBER` so merging the PR auto-closes the issue (O-7).
 
             ## Finish
-            - If NO topic resolved (all skipped/duplicate/unmatched), open zero PRs and print a one-line
-              "no cheatsheets generated" with the reason.
-            - Report: the issue read, the selection parsed, topics resolved, PRs opened (with branch
-              names), and any skipped/duplicate/unmatched numbers.
+            - If NO topic resolved (all skipped/duplicate/unmatched), open zero PRs, do not push an empty
+              branch, and print a one-line "no cheatsheets generated" with the reason.
+            - Report: the issue read, the selection parsed, topics bundled into the PR, the single PR
+              opened (with branch name), and any skipped/duplicate/unmatched numbers.
