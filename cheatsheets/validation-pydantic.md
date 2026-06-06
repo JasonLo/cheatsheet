@@ -1,12 +1,10 @@
 # Validation with Pydantic v2
 
-_Grounded in JasonLo's repos as of 2026-06-05; current practice per Pydantic v2 official docs (context7 `/pydantic/pydantic`)._
+_Grounded in JasonLo's repos as of 2026-06-06; current practice per Pydantic v2.12 release notes and official docs._
 
 ## Reference snippet
 
 ```python
-from __future__ import annotations
-
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -49,6 +47,7 @@ payload = d.model_dump(mode="json")  # not .dict()/.json()
 - **"Every rule is a `@validator` method"** → **"The constraint belongs to the type."** A 0–10 bound written as a custom validator function reimplements what `Field(ge=0, le=10)` (or an `Annotated[int, Field(ge=0, le=10)]` alias) states declaratively. v2's mental model: simple value bounds are *schema*, not procedure — reserve validators for logic the type system genuinely can't express (cross-field, side-effecting, parse-then-coerce). (seen in a private LLM-screening model, where a `validate_confidence` function duplicates a plain range bound)
 - **"Generate derived defaults in `model_post_init`"** → **"A self-generating default belongs to the field."** Filling a blank `id` after construction reconstructs imperatively what `Field(default_factory=lambda: uuid4().hex[:8])` declares at the field. `model_post_init` is for cross-field derived state; a single field's default-on-absence is a property of that field. (seen in a private time-tracking model)
 - **"Build the object, then trust it"** → **"Parse at the boundary with `model_validate`."** Untrusted input (dict from YAML/JSON/an LLM) should enter through `Model.model_validate(data)` and leave through `model_dump(mode="json")` — not the v1 `parse_obj`/`.dict()`/`.json()` trio. The shift is treating the model as a *parse boundary* that converts unknown data into a trusted instance, not just a container you populate.
+- **"`from __future__ import annotations` helps Pydantic resolve types"** → **"Python 3.14 natively defers annotations; the import now conflicts."** PEP 563 (the `__future__` import) stringifies all annotations, clashing with Pydantic v2.12's type-resolution on Python 3.14 — causing `ClassVar` NameErrors and `TypedDict`/`Required` failures (pydantic/pydantic#12393, #12421). Python 3.14 adopted PEP 649, making lazy annotation evaluation the default; the import is unnecessary and harmful on 3.14+. Drop it; Pydantic v2.12 handles deferred annotations correctly without it. (seen in `JasonLo/best-in-slot:bis/models.py` and `bis/config.py`)
 
 ## Agent rules
 
@@ -60,3 +59,4 @@ payload = d.model_dump(mode="json")  # not .dict()/.json()
 - ALWAYS write annotations as `X | None` / `list[X]` (PEP 604/585), not `Optional[X]` / `List[X]`.
 - ALWAYS cross the boundary with `model_validate` / `model_dump` / `model_dump_json` — NEVER the v1 `parse_obj` / `.dict()` / `.json()`.
 - NEVER use `class Config:` — it's `model_config = ConfigDict(...)` in v2.
+- NEVER add `from __future__ import annotations` to Python 3.14+ Pydantic code — Python 3.14 evaluates annotations lazily by default (PEP 649); mixing it with Pydantic v2.12's type resolution causes `ClassVar` and `TypedDict`/`Required` failures.
