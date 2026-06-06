@@ -2,14 +2,14 @@
 id: I-2
 title: Self-maintenance via scheduled CI agents
 slug: self-maintenance-via-scheduled-ci-agents
-status: in_progress
+status: complete
 opened: 2026-06-05
-closed: null
+closed: 2026-06-06
 superseded_by: null
-verdict_outcomes_passed: 6
-verdict_outcomes_passed_by_test: 2
+verdict_outcomes_passed: 7
+verdict_outcomes_passed_by_test: 3
 verdict_outcomes_total: 7
-verdict_checked_at: 2026-06-06T00:08:25Z
+verdict_checked_at: 2026-06-06T00:29:39Z
 ---
 
 # Intent: Self-maintenance via scheduled CI agents
