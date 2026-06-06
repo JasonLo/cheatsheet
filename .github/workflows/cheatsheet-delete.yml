@@ -1,0 +1,159 @@
+name: "Cheatsheet delete from selection"
+
+# Closes the deletion loop in the GitHub web UI (intent I-3 O-4/O-5): when the repo OWNER
+# comments a selection (e.g. "1 and 3") on an open "Cheatsheet staleness …" issue, delete
+# each chosen sheet via the deterministic scripts/delete_cheatsheet.py and open ONE
+# human-reviewed PR for the whole run that bundles every deletion + the index update. The
+# PR body carries `Closes #<issue>`, so merging it auto-closes the issue (O-5). No local
+# step, no auto-merge. Deletion runs the SCRIPT, never the cheatsheet skill (P-6).
+#
+# CAVEAT — issue_comment workflows ALWAYS run the copy on the DEFAULT BRANCH (main),
+# never a feature branch. So:
+#   1. This file only takes effect once merged to main.
+#   2. The issue_comment path cannot be tested from a branch — use the
+#      workflow_dispatch path (issue_number + selection inputs) for pre-merge testing.
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Staleness issue number to read the table from"
+        required: true
+      selection:
+        description: 'Sheet numbers to delete, e.g. "1 and 3"'
+        required: true
+
+permissions:                # least privilege: open PRs + ack the triggering comment
+  contents: write
+  pull-requests: write
+  issues: write             # react 👀 to the comment that kicked this run off
+  id-token: write           # OIDC — required by claude-code-action
+
+concurrency:
+  # Per-issue group: selections on different issues run in parallel; repeated
+  # comments on the SAME issue serialize so two runs can't race to create a branch.
+  group: "cheatsheet-delete-${{ github.event.issue.number || inputs.issue_number }}"
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    # issue_comment path: owner-only, open STALENESS issue, not a PR comment.
+    # workflow_dispatch path always runs (manual testing).
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request == null &&
+       github.event.issue.state == 'open' &&
+       github.event.comment.user.login == github.repository_owner &&
+       startsWith(github.event.issue.title, 'Cheatsheet staleness'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20       # deletion is cheap — no mining, no doc grounding (tunable)
+    env:
+      # gh writes (branch push, PRs) target THIS repo via the default token.
+      GH_TOKEN: ${{ github.token }}
+      # Read-only PAT (contents+metadata, all repos incl. private) for any cross-repo re-confirmation.
+      GH_SCAN_TOKEN: ${{ secrets.GH_SCAN_TOKEN }}
+      # Untrusted event/input data passed as env (NEVER interpolated into the prompt).
+      ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+      SELECTION_COMMENT: ${{ github.event.comment.body }}
+      DISPATCH_SELECTION: ${{ inputs.selection }}
+    steps:
+      - name: Acknowledge the triggering comment with 👀
+        # issue_comment path only — the workflow_dispatch path has no comment to react to.
+        if: github.event_name == 'issue_comment'
+        run: |
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content=eyes
+
+      - name: Preflight — require the read-only scan token
+        run: |
+          if [ -z "${GH_SCAN_TOKEN}" ]; then
+            echo "::error::GH_SCAN_TOKEN secret is not set. Add a read-only fine-grained PAT (contents+metadata, all repos) named GH_SCAN_TOKEN."
+            exit 1
+          fi
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6 — bump the SHA deliberately
+        with:
+          fetch-depth: 0      # full history so the run branch forks cleanly off main
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8 — bump the SHA deliberately
+        # `uv run scripts/delete_cheatsheet.py` (below) needs uv + Python on PATH; the
+        # runner ships neither. uv fetches the script's required Python (>=3.14) on demand.
+
+      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1 — bump the SHA deliberately
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Read,Glob,Grep,Bash(date:*),Bash(gh api:*),Bash(gh repo view:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(git status:*),Bash(git diff:*),Bash(git switch:*),Bash(git checkout:*),Bash(git rm:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(uv run:*)"
+          prompt: |
+            You are the selection-triggered DELETE agent for this cheatsheet repo (intent I-3, O-4/O-5).
+            The owner picked one or more sheets to delete by commenting on a "Cheatsheet staleness …"
+            issue. Your job: delete every chosen sheet via the deterministic deletion script and open ONE
+            pull request for the whole run that bundles ALL deletions plus the index update. The whole
+            loop must complete in the GitHub web UI — you NEVER merge, approve, or close anything
+            yourself (merging the single PR auto-closes the issue via the `Closes #N` keyword you put in
+            its body — that is the only closing mechanism, and the human triggers it).
+
+            ## Deletion is deterministic — use the SCRIPT, not hand-edits
+            - Remove each sheet ONLY by running `uv run scripts/delete_cheatsheet.py <slug>`. The script
+              deletes `cheatsheets/<slug>.md` and rewrites `index.md` (Constitution P-4/P-6). You have NO
+              Edit/Write tools — never hand-delete a file or hand-edit `index.md`.
+
+            ## Orientation (read first)
+            - Read `CLAUDE.md` and `specs/CONSTITUTION.md`.
+            - Capture today's date: `date -u +%Y-%m-%d`. You start on the repo's default branch.
+
+            ## Resolve the selection (do this before anything else)
+            - The issue number is in `$ISSUE_NUMBER`. Read it (default token, THIS repo):
+              `gh issue view "$ISSUE_NUMBER" --json title,body,state`.
+            - CONFIRM the issue state is OPEN and its title begins with `Cheatsheet staleness`. If either
+              check fails, STOP immediately and open no PR.
+            - The issue body contains a markdown table: `| # | Cheatsheet (use case) | Target | Cheatsheet file | … |`.
+              Column 4 is the backtick-wrapped `cheatsheets/<slug>.md` path — that is the deletion input.
+            - The selected numbers come from `$SELECTION_COMMENT` (comment trigger) or `$DISPATCH_SELECTION`
+              (manual run). Parse whichever is non-empty for integers; accept "1 and 3", "1,3", "1 & 3", "1 3".
+            - For each selected number, read THAT row and extract the cheatsheet file/slug from column 4.
+              Skip any selected number with no matching row and report it. NEVER invent a sheet.
+
+            ## Two-token rule (NON-NEGOTIABLE security boundary)
+            - Any CROSS-REPO READ (only if you re-confirm evidence): ALWAYS prefix with the read-only token,
+              e.g. `GH_TOKEN=$GH_SCAN_TOKEN gh repo view <login>/<repo> --json visibility`.
+            - READING THE ISSUE and WRITES (branch push, `gh pr create`) in THIS repo: plain `gh`/`git`.
+            - NEVER read other repos with the default token; NEVER write with the scan token.
+            - You have NO merge/approve/close ability and MUST NOT attempt one — your only output is one PR.
+
+            ## Privacy (Constitution P-7) — applies to the PR title and body
+            - NEVER put a PRIVATE repo's name/slug/URL or verbatim content in the PR. Generalize
+              private-sourced evidence. Public repos may be cited.
+
+            ## Task — produce ONE pull request for the whole run, bundling every deletion
+            1. Pick the run branch off the default branch: `auto/delete/from-issue-$ISSUE_NUMBER`.
+               Run-level duplicate guard: `gh pr list --state open --head <branch> --json number` — if an
+               open PR already targets this branch, STOP and report "PR already open for this selection".
+               Otherwise `git switch -c <branch>` off the default branch.
+            2. For EACH resolved sheet, run `uv run scripts/delete_cheatsheet.py <slug>` (pass the column-4
+               value; the script tolerates a leading `cheatsheets/` and trailing `.md`). If the script
+               exits non-zero (unknown name), report that number as skipped and CONTINUE — do not fail the
+               whole run. The script rewrites `index.md` on each call, so after the last deletion the index
+               reflects every removal.
+            3. After all deletions, stage everything once: `git add -A` (captures the removed
+               `cheatsheets/*.md` and the updated `index.md`).
+            4. Open exactly ONE PR for the run. If at least one sheet was deleted, `git commit`,
+               `git push -u origin <branch>`, then `gh pr create`:
+               - Title: `chore(cheatsheet): delete selected stale sheets from #$ISSUE_NUMBER`
+               - Body: a short SUMMARY with one bullet per deleted sheet (use case + target; public
+                 evidence only, never a private repo identifier/content). END the body with a line that is
+                 exactly `Closes #$ISSUE_NUMBER` so merging the PR auto-closes the issue (O-5).
+               Do NOT merge — you have no merge tool and must not attempt one.
+
+            ## Finish
+            - If NO sheet resolved (all skipped/unmatched, or a duplicate PR exists), open zero PRs, do not
+              push an empty branch, and print a one-line "no cheatsheets deleted" with the reason.
+            - Report: the issue read, the selection parsed, sheets deleted, the single PR opened (with
+              branch name), and any skipped/unmatched numbers.
