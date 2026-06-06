@@ -1,0 +1,110 @@
+name: "Cheatsheet staleness prune"
+
+# Inspects the owner's GitHub usage history and opens ONE issue proposing deletion of
+# any cheatsheet whose target has not appeared in the owner's activity for >1 year
+# (intent I-3 O-3). Issue-only: it NEVER deletes, commits, or opens a PR — the owner
+# replies on the issue to trigger cheatsheet-delete.yml, which opens the deletion PR.
+
+on:
+  schedule:
+    - cron: "37 5 1 * *"   # 05:37 UTC on the 1st of every month
+  workflow_dispatch: {}     # always allow manual runs for testing
+
+permissions:                # least privilege: this job only opens an issue
+  contents: read            # read the checked-out repo (existing cheatsheets/index)
+  issues: write
+  id-token: write           # OIDC — required by claude-code-action
+
+concurrency:
+  group: "cheatsheet-prune"
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30       # bound the run (tunable)
+    env:
+      GH_TOKEN: ${{ github.token }}                  # issue writes target THIS repo
+      GH_SCAN_TOKEN: ${{ secrets.GH_SCAN_TOKEN }}    # read-only PAT for cross-repo activity scan
+    steps:
+      - name: Preflight — require the read-only scan token
+        run: |
+          if [ -z "${GH_SCAN_TOKEN}" ]; then
+            echo "::error::GH_SCAN_TOKEN secret is not set. Add a read-only fine-grained PAT (contents+metadata, all repos) named GH_SCAN_TOKEN."
+            exit 1
+          fi
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6 — bump the SHA deliberately
+
+      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1 — bump the SHA deliberately
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Read,Glob,Grep,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue list:*),Bash(gh issue create:*)"
+          prompt: |
+            You are the monthly staleness-pruner for this cheatsheet repo (intent I-3, outcome O-3).
+            Your job: find cheatsheets the owner has stopped using and propose deleting them in ONE
+            issue. You NEVER delete a file, commit, or open a PR — your only output is one issue, and
+            the owner replies on it to trigger the deletion workflow.
+
+            ## Orientation (read first)
+            - Read `CLAUDE.md`, `specs/CONSTITUTION.md`, and `.claude/skills/cheatsheet/SKILL.md`.
+            - List every `cheatsheets/*.md` and read `index.md` — these are the sheets you may propose
+              for deletion. For each sheet, recover its TARGET from the H1 (`# <use case> with <target>`)
+              and the italic `_Grounded in <target> …_` source line.
+            - Resolve the login once: `gh api user --jq .login`.
+            - Compute the staleness cutoff: `date -u -d '1 year ago' +%Y-%m-%d`.
+
+            ## Two-token rule (NON-NEGOTIABLE security boundary)
+            - CROSS-REPO READS (the usage scan): ALWAYS prefix with the read-only token, e.g.
+              `GH_TOKEN=$GH_SCAN_TOKEN gh search code --owner <login> "<target>" --json repository,path`,
+              `GH_TOKEN=$GH_SCAN_TOKEN gh search commits --author <login> --committer-date '>=<cutoff>' --json repository,sha`.
+            - THE ISSUE WRITE (`gh issue list`/`gh issue create`) in THIS repo: plain `gh` (default token).
+            - NEVER read other repos with the default token; NEVER write with the scan token.
+            - You have NO write access to repo contents and CANNOT open PRs — your only output is one issue.
+
+            ## Privacy (Constitution P-7) — applies to the entire issue (title + body)
+            - Resolve each touched repo's visibility before citing it:
+              `GH_TOKEN=$GH_SCAN_TOKEN gh repo view <login>/<repo> --json visibility -q .visibility`.
+            - NEVER name/slug/URL a PRIVATE repo or quote its code in the issue; generalize private-sourced
+              evidence. Public repos may be cited as evidence.
+
+            ## Task — define staleness via gh, then propose deletions in ONE issue
+            1. For each cheatsheet, decide whether its TARGET has been USED WITHIN THE PAST YEAR. A target
+               counts as USED if ANY of these returns a post-cutoff hit (all via the scan token):
+               - `GH_TOKEN=$GH_SCAN_TOKEN gh search code --owner <login> "<target>"` returns any file, AND
+                 that repo shows commit activity since the cutoff; OR
+               - `GH_TOKEN=$GH_SCAN_TOKEN gh search commits --author <login> --committer-date '>=<cutoff>'`
+                 touches a repo where the target is present.
+               Treat ANY credible post-cutoff signal as "used". Only when there is ZERO post-cutoff signal
+               for the target is the sheet STALE.
+            2. Keep ONLY the stale sheets. If NONE are stale, open NO issue (no-op when clean).
+            3. Dedup: `gh issue list --state open --search "Cheatsheet staleness"`. If an open staleness
+               issue already proposes the same sheets, SKIP (do not open a duplicate).
+            4. If at least one sheet is stale, open exactly ONE issue with `gh issue create`:
+               - Title: `Cheatsheet staleness — <Month YYYY>`
+               - Body: a short intro, then a markdown table, then a one-line ask. Use this shape — column 4
+                 MUST carry the exact `cheatsheets/<slug>.md` path so the delete workflow needs no slug
+                 re-derivation:
+
+                 ```markdown
+                 These cheatsheets cover targets with no activity in your GitHub history since <cutoff>.
+                 Comment with the number(s) you want to delete.
+
+                 | # | Cheatsheet (use case) | Target | Cheatsheet file | Last seen | Evidence |
+                 |---|---|---|---|---|---|
+                 | 1 | <use case> | `<target>` | `cheatsheets/<slug>.md` | <date or "none found"> | `owner/repo` (public; private generalized) |
+                 | 2 | ... | ... | ... | ... | ... |
+
+                 Reply on THIS open issue (as the repo owner) with the number(s) to delete — e.g. "1 and 3".
+                 Your comment triggers the delete workflow, which opens one PR removing them; no local
+                 command needed.
+                 ```
+
+            ## Finish
+            - If no sheet is stale (or a duplicate issue already exists), open NO issue and print
+              "no stale cheatsheets".
+            - Report: sheets scanned, the staleness cutoff used, sheets judged stale, and the issue number
+              opened (or none).
