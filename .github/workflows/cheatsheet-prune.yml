@@ -41,7 +41,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           claude_args: |
-            --max-turns 60
+            --max-turns 120
             --allowedTools "Read,Glob,Grep,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue list:*),Bash(gh issue create:*)"
           prompt: |
             You are the monthly staleness-pruner for this cheatsheet repo (intent I-3, outcome O-3).
