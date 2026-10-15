@@ -8,6 +8,7 @@
 - [Terminal CLIs with Typer](cheatsheets/cli-typer.md)
 - [Typed config loading with pydantic-settings](cheatsheets/config-pydantic-settings.md)
 - [Containerized dev environment setup with devcontainers](cheatsheets/containerized-dev-environment-setup-devcontainers.md)
+- [Converting scraped web content to markdown for LLM pipelines with markitdown](cheatsheets/converting-scraped-web-content-to-markdown-for-llm-pipelines-markitdown.md)
 - [Data apps & dashboards with Streamlit](cheatsheets/dashboards-streamlit.md)
 - [Deep learning with PyTorch](cheatsheets/deep-learning-torch.md)
 - [Full-feature frontend with React](cheatsheets/frontend-react.md)
