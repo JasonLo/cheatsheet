@@ -1,41 +1,37 @@
 # Converting scraped web content to markdown for LLM pipelines with markitdown
 
-_Grounded in JasonLo's repos as of 2026-10-15; current practice per markitdown v0.1.8 (microsoft/markitdown)._
+_Grounded in JasonLo's repos as of 2026-10-15. Current practice is from markitdown v0.1.8 (microsoft/markitdown)._
 
 ## Reference snippet
 
 ```python
 import io
-from markitdown import MarkItDown, StreamInfo  # StreamInfo is now public
+from markitdown import MarkItDown, StreamInfo  # StreamInfo is public
 
-_md = MarkItDown()  # module-level singleton; reuse across all calls
+_md = MarkItDown()  # One instance at module level, used for all calls
 
 def to_markdown(html_bytes: bytes, url: str) -> str:
     info = StreamInfo(mimetype="text/html", url=url)
     result = _md.convert_stream(io.BytesIO(html_bytes), stream_info=info)
-    return result.markdown  # not .text_content (soft-deprecated)
+    return result.markdown  # Not .text_content, which is an old alias
 ```
 
 ## Typical usage patterns
 
-- **Singleton + `convert_stream` for pipelines.** Instantiate `MarkItDown()` once at module level; pass raw HTML/PDF bytes as `io.BytesIO` with a `StreamInfo` that carries mimetype, extension, and URL — markitdown uses these for format detection and link resolution. Reusing the singleton avoids repeated converter registration overhead across thousands of pages. (seen in `UW-Madison-DSI/agentic-web-extraction:agentic_web_extraction/normalize.py`)
-
-- **Strip boilerplate with BeautifulSoup before markitdown.** Remove `<script>`, `<style>`, `<nav>`, `<header>`, `<footer>`, `<aside>` with BeautifulSoup *before* handing bytes to markitdown; this cuts LLM token cost without losing content. Pin to `html.parser` (stdlib) over `lxml` to avoid hash-instability in test fixtures. Preserve `<header>` elements *inside* `<main>`/`<article>` — they carry title and date. (seen in `UW-Madison-DSI/agentic-web-extraction:agentic_web_extraction/normalize.py`)
-
-- **Post-process with caller-supplied `str → str` text filters.** Pass an optional sequence of pure string-transformation functions after markitdown conversion to strip site-specific volatile tokens (timestamps, session IDs, ad fragments) without coupling the pipeline to any particular site. Apply them in order on `result.markdown`. (seen in `UW-Madison-DSI/agentic-web-extraction:agentic_web_extraction/normalize.py`)
+- **One instance and `convert_stream` for pipelines.** Make one `MarkItDown()` at module level and use it for all pages. Give the raw bytes as `io.BytesIO` with a `StreamInfo` that holds the mimetype, extension, and URL for format detection and link resolution. (seen in `UW-Madison-DSI/agentic-web-extraction:agentic_web_extraction/normalize.py`)
+- **Remove boilerplate with BeautifulSoup first.** Remove `<script>`, `<style>`, `<nav>`, `<header>`, `<footer>`, and `<aside>` before markitdown, but keep a `<header>` inside `<main>` or `<article>`. Use the stdlib `html.parser`, because `lxml` can change the output of test fixtures. (seen in `UW-Madison-DSI/agentic-web-extraction:agentic_web_extraction/normalize.py`)
+- **Text filters after the conversion.** Apply a sequence of pure `str → str` functions to `result.markdown` in order. Each filter removes tokens that change between visits, for example timestamps or session IDs, so the pipeline stays general. (seen in `UW-Madison-DSI/agentic-web-extraction:agentic_web_extraction/normalize.py`)
 
 ## Learnings
 
-- **Importing `StreamInfo` from a private submodule** → **import it from the top-level package.** `from markitdown._stream_info import StreamInfo` reached into an internal module; `StreamInfo` is now in `__all__` and importable as `from markitdown import StreamInfo`. Relying on private submodule paths breaks across minor releases. (seen in `UW-Madison-DSI/agentic-web-extraction:agentic_web_extraction/normalize.py`)
-
-- **Reading `.text_content` from the result** → **read `.markdown` instead.** `DocumentConverterResult.text_content` is a soft-deprecated alias; `.markdown` is now the primary field (and `str(result)` also works). The change signals that the result type is richer than plain text — it's structured markdown — so new code should treat `.markdown` as the canonical attribute name.
-
-- **Using `convert_url()` for remote pages** → **use `convert()` or `convert_uri()`.** `convert_url` is flagged for future deprecation in favor of the universal `convert()` dispatcher, which accepts a `str` path-or-URL, a `Path`, a `requests.Response`, or any binary file-like — reducing the surface area you need to know.
+- **An internal module path is a stable import** → **Import only the public names of the package**. `StreamInfo` is now in `__all__`, so `from markitdown import StreamInfo` is correct. A path such as `markitdown._stream_info` can break in a minor release.
+- **The result is plain text** → **The result is structured markdown**. Read `result.markdown`, because `text_content` is now only an old alias.
+- **Each type of source needs its own method** → **One `convert()` method accepts all sources**. It accepts a path or URL string, a `Path`, a `requests.Response`, or a binary file object, so do not use `convert_url()` in new code.
 
 ## Agent rules
 
-- ALWAYS import `StreamInfo` from `markitdown` directly (`from markitdown import MarkItDown, StreamInfo`), not from `markitdown._stream_info`.
-- ALWAYS access `result.markdown` (not `result.text_content`) on `DocumentConverterResult` objects.
-- ALWAYS create a single `MarkItDown()` instance at module level and reuse it; never instantiate per-call.
-- ALWAYS supply a `StreamInfo(mimetype=..., url=...)` when calling `convert_stream` so markitdown can detect format and resolve relative links correctly.
-- NEVER pass raw HTML bytes to markitdown without stripping boilerplate first when the goal is LLM input — nav/footer/script elements inflate token count without adding signal.
+- ALWAYS import `StreamInfo` from `markitdown`, not from `markitdown._stream_info`.
+- ALWAYS read `result.markdown`, not `result.text_content`.
+- ALWAYS make one `MarkItDown()` instance at module level and use it for all calls.
+- ALWAYS give a `StreamInfo(mimetype=..., url=...)` to `convert_stream`.
+- NEVER give raw HTML to markitdown for LLM input before you remove the boilerplate elements.
