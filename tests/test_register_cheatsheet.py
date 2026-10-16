@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.14"
+# dependencies = ["pytest"]
+# ///
 import importlib.util
 from pathlib import Path
 
@@ -57,3 +61,9 @@ def test_main_writes_index(tmp_path):
     reg.main(["--root", str(tmp_path)])
     index = (tmp_path / "index.md").read_text()
     assert "- [Data fetching with axios](cheatsheets/axios.md)" in index
+
+
+if __name__ == "__main__":
+    import pytest
+
+    raise SystemExit(pytest.main([__file__]))

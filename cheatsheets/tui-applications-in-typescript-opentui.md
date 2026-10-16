@@ -1,6 +1,6 @@
 # TUI applications in TypeScript with opentui
 
-_Grounded in JasonLo's repos as of 2026-06-05; current practice per opentui.com/docs._
+_Grounded in JasonLo's repos as of 2026-06-05. Current practice is from opentui.com/docs._
 
 ## Reference snippet
 
@@ -12,7 +12,7 @@ import { createRoot, useKeyboard } from '@opentui/react'
 async function main() {
   const renderer = await createCliRenderer({ exitOnCtrlC: true, targetFps: 30 })
   createRoot(renderer).render(<App />)
-  // call renderer.destroy() in SIGINT/SIGTERM handlers for programmatic exit
+  // to exit from code, call renderer.destroy() in SIGINT and SIGTERM handlers
 }
 main().catch((e) => { console.error(e); process.exit(1) })
 
@@ -30,23 +30,25 @@ function App() {
 
 ## Typical usage patterns
 
-- **Multi-screen navigation with tab state** — top-level `App` holds a `tab` state enum; each screen is a separate React component rendered conditionally. `useKeyboard` on the root handles number-key jumps and Tab/Shift-Tab cycling. No router or navigation library needed. (JasonLo/skill-cellar:src/App.tsx)
+- **Multi-screen navigation with tab state**. The top-level `App` keeps a `tab` state enum and renders each screen as a separate React component. A `useKeyboard` hook on the root handles number keys and Tab/Shift-Tab, so the app needs no router library. (seen in `JasonLo/skill-cellar:src/App.tsx`)
 
-- **Keyboard-first UX via `useKeyboard`** — attach `useKeyboard((e) => {...})` in any component; key names are lowercase strings (`'up'`, `'down'`, `'return'`, `'space'`, `'tab'`). Modifier booleans `e.shift`, `e.ctrl`, `e.meta` are always present. Multiple hooks across the component tree coexist safely. (JasonLo/skill-cellar:src/App.tsx, src/screens/Market.tsx)
+- **Keyboard-first UX with `useKeyboard`**. Attach `useKeyboard((e) => {...})` in any component. Key names are lowercase strings, for example `'up'`, `'down'`, `'return'`, `'space'`, and `'tab'`, and the modifier booleans `e.shift`, `e.ctrl`, and `e.meta` are always present. (seen in `JasonLo/skill-cellar:src/App.tsx`, `src/screens/Market.tsx`)
 
-- **Scrollable list with programmatic scroll tracking** — wrap the list in `<scrollbox ref={listRef} scrollY>` and assign each row an `id` prop; call `listRef.current?.scrollChildIntoView(`row-${selected}`)` in a `useEffect` on the selection index to keep the highlighted row visible as keyboard selection moves. (JasonLo/skill-cellar:src/screens/Library.tsx)
+- **Scrollable list that follows the selection**. The list is in a `<scrollbox ref={listRef} scrollY>`, and each row has an `id` prop. In a `useEffect` on the selection index, call `listRef.current?.scrollChildIntoView(`row-${selected}`)` to keep the selected row visible. (seen in `JasonLo/skill-cellar:src/screens/Library.tsx`)
 
 ## Learnings
 
-- **React DOM primitives → OpenTUI terminal primitives.** `<div>` → `<box>`, inline content → `<span>` inside `<text>`, `<ul><li>` → looped `<box>` rows. Flexbox props (`flexDirection`, `width`, `padding`, `gap`) work the same but belong on `<box>`, not `<div>`. Colors go on `fg`/`bg` props (hex `#rrggbb` or CSS name) — there is no `style` object.
+- **Write React for DOM elements** → **Write React for terminal primitives**. Layout uses `<box>` instead of `<div>`, and inline content goes in `<span>` inside `<text>`. Flexbox props, for example `flexDirection`, `width`, `padding`, and `gap`, go on `<box>`, and colors go on `fg`/`bg` props because there is no `style` object.
 
-- **Browser keyboard events → `useKeyboard` hook.** Don't wire `process.stdin` or `readline` directly; `useKeyboard` integrates with OpenTUI's Zig render loop so input is frame-synchronous and composable. Attach it at multiple component levels — root for global shortcuts, each screen for local ones — without conflict.
+- **Read keys from browser events or `process.stdin`** → **Read keys with the `useKeyboard` hook**. The `useKeyboard` hook connects to the Zig render loop of OpenTUI, so input is synchronous with each frame. Hooks on the root handle global shortcuts, and hooks on each screen handle local ones without conflict.
 
-- **OpenTUI holds terminal raw mode → explicit cleanup on exit.** Without `renderer.destroy()`, the terminal stays in raw mode after the process ends (broken cursor, no echo). `exitOnCtrlC: true` in `createCliRenderer` covers Ctrl-C, but not `process.exit()` calls or signal handlers — add `renderer.destroy()` there explicitly.
+- **The process exit restores the terminal** → **The app must release raw mode**. Without `renderer.destroy()`, the terminal stays in raw mode after exit with a broken cursor and no echo. The `exitOnCtrlC: true` option handles Ctrl-C, but `process.exit()` calls and signal handlers must call `renderer.destroy()`.
 
 ## Agent rules
 
-- ALWAYS set `"jsxImportSource": "@opentui/react"` in tsconfig when using @opentui/react
-- ALWAYS use `<box>` / `<text>` / `<scrollbox>` — NEVER `<div>` / `<span>` / `<ul>`
-- ALWAYS use `useKeyboard` for terminal input — NEVER wire `process.stdin` or `readline` directly
-- ALWAYS call `renderer.destroy()` in SIGINT/SIGTERM handlers and programmatic exit paths
+- ALWAYS set `"jsxImportSource": "@opentui/react"` in tsconfig when you use @opentui/react.
+- ALWAYS use `<box>`, `<text>`, and `<scrollbox>` for terminal layout and content.
+- NEVER use `<div>`, `<ul>`, or a `<span>` outside a `<text>`.
+- ALWAYS use `useKeyboard` for terminal input.
+- NEVER read input from `process.stdin` or `readline` directly.
+- ALWAYS call `renderer.destroy()` in SIGINT/SIGTERM handlers and programmatic exit paths.

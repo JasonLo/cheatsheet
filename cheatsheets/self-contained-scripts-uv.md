@@ -1,6 +1,6 @@
 # Self-contained scripts with uv
 
-_Grounded in JasonLo's repos as of 2026-06-05; current practice per uv official docs (context7 `/astral-sh/uv`)._
+_Grounded in JasonLo's repos as of 2026-06-05. Current practice is from uv official docs (context7 `/astral-sh/uv`)._
 
 ## Reference snippet
 
@@ -21,27 +21,30 @@ def main(name: str) -> None:
 
 if __name__ == "__main__":
     app()
-# run anywhere: `uv run scripts/foo.py world` — no venv, no pip install
-# manage deps: `uv add --script scripts/foo.py rich`; pin: `uv lock --script scripts/foo.py`
+# run anywhere: `uv run scripts/foo.py world`. You do not need a venv or pip install.
+# add a dependency: `uv add --script scripts/foo.py rich`. Pin the dependencies: `uv lock --script scripts/foo.py`
 ```
 
 ## Typical usage patterns
 
-- **Self-contained tool script** — a PEP-723 `# /// script` header declaring its own `requires-python`/`dependencies`, run via `uv run`. Reach for it to ship a portable CLI (typer + rich) that runs on any machine with `uv`, zero packaging. (seen in `JasonLo/undock:scripts/release.py`, `JasonLo/uw-s3:scripts/release.py`, `JasonLo/code-template:{{cookiecutter.project_name}}/scripts/release.py`)
-- **Strip `VIRTUAL_ENV` before shelling out to `uv`** — a script launched by `uv run` inherits a `VIRTUAL_ENV` pointing at its *isolated cache env*, so child `uv` commands target the wrong venv. Must-know: the script and the project it acts on live in different environments. (seen in `JasonLo/undock:scripts/release.py`)
-- **Project-internal automation script** — imports the project's own package, needs the project venv, run as `uv run python scripts/x.py`. A different category from the portable tool: glue for one repo, not a standalone tool. (seen in a private repo)
+- A **standalone tool script** has a PEP-723 `# /// script` header with its own `requires-python` and `dependencies`, and runs with `uv run`. Use it to distribute a portable CLI with typer and rich that needs only `uv`. (seen in `JasonLo/undock:scripts/release.py`, `JasonLo/uw-s3:scripts/release.py`, `JasonLo/code-template:{{cookiecutter.project_name}}/scripts/release.py`)
+- **Remove `VIRTUAL_ENV`** before a script runs child `uv` commands. Under `uv run`, the script inherits a `VIRTUAL_ENV` for its isolated cache env, and the child commands use the wrong venv. (seen in `JasonLo/undock:scripts/release.py`)
+- A **project helper script** imports the package of the project and needs the project venv. Run it with `uv run python scripts/x.py`. (seen in a private repo)
 
 ## Learnings
 
-- **"A script needs the project's environment"** → **"A script can own its dependencies."** PEP-723 + uv lets a *tool* script declare deps inline and run anywhere; decide tool-vs-glue before picking the run style. (seen in `JasonLo/undock:scripts/release.py` vs a private project-glue script)
-- **"`uv run python script.py` is just how you run a script"** → **"`python` chooses the project env and ignores inline metadata."** `uv run script.py` builds an isolated env from `# /// script`; inserting `python` silently opts out of that isolation. The question is which environment model you're invoking, not syntax.
-- **"The `# /// script` block is mine to hand-maintain"** → **"uv owns the metadata; you state intent."** Use `uv add --script` / `uv lock --script`; hand-editing the dep list drifts it out of sync, same as hand-editing a lockfile.
+- **A script needs the environment of the project** → **A script can own its dependencies.** A PEP-723 tool script declares its dependencies inline. The run style depends on the script type: a standalone tool or a project helper script. (seen in `JasonLo/undock:scripts/release.py` and a private project helper script)
+- **`uv run python script.py` is the usual run command** → **`python` selects the project env and ignores inline metadata.** `uv run script.py` builds an isolated env from `# /// script`. The extra `python` disables that isolation without a warning.
+- **The `# /// script` block is for hand maintenance** → **uv owns the metadata, and you state the intent.** Use `uv add --script` and `uv lock --script`. A dependency list or a lockfile that you edit by hand becomes inconsistent.
 
 ## Agent rules
 
-- ALWAYS decide tool-vs-glue before choosing the run style: portable tool → `# /// script` + `uv run script.py`; project glue → `uv run python scripts/x.py`.
-- NEVER prepend `python` to `uv run script.py` for a self-contained tool — it opts out of PEP-723 isolation and uses the project env.
-- ALWAYS manage inline deps with `uv add --script` / `uv lock --script`.
-- NEVER hand-edit the `# /// script` dependency list — let uv own the metadata.
-- ALWAYS strip `VIRTUAL_ENV` before a `uv run` script shells out to child `uv` commands — the inherited value points at the isolated cache env.
-- ALWAYS `uv lock --script` when a self-contained tool needs reproducibility — pinning and portability are independent.
+- ALWAYS choose the run style from the script type, a standalone tool or a project helper script.
+- ALWAYS give a standalone tool a `# /// script` header.
+- ALWAYS run a standalone tool with `uv run script.py`.
+- ALWAYS run a project helper script with `uv run python scripts/x.py`.
+- NEVER add `python` to `uv run script.py` for a standalone tool.
+- ALWAYS manage inline dependencies with `uv add --script` and `uv lock --script`.
+- NEVER edit the `# /// script` dependency list by hand.
+- ALWAYS remove `VIRTUAL_ENV` before a `uv run` script starts child `uv` commands.
+- ALWAYS run `uv lock --script` when a standalone tool needs reproducibility.

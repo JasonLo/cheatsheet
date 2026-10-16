@@ -1,101 +1,81 @@
 # Self-maintenance with anthropics/claude-code-action
 
-_Grounded in JasonLo's repos as of 2026-06-05; current practice per Claude Code Action docs (context7 `/anthropics/claude-code-action`, v1)._
+_Grounded in JasonLo's repos as of 2026-06-05. Current practice is from Claude Code Action docs (context7 `/anthropics/claude-code-action`, v1)._
 
 ## Reference snippet
 
 ```yaml
-# .github/workflows/doc-cleaner-claude.yml — scheduled self-maintenance agent
-name: "Documentation Cleaner"
-
+# .github/workflows/doc-cleaner-claude.yml: agent that runs on a schedule to maintain the repo
 on:
-  schedule:
-    - cron: "23 1 * * 0"   # weekly, Sunday
-  workflow_dispatch:        # always pair with schedule so you can test on demand
-
-permissions:                # least privilege: this job only opens PRs
-  contents: write
-  pull-requests: write
-  id-token: write           # OIDC — required by the action
-
-concurrency:
-  group: "doc-cleaner"      # one run at a time; no pile-ups
-
+  schedule: [{ cron: "23 1 * * 0" }]  # one time each week, on Sunday
+  workflow_dispatch:          # always add this with schedule. Then you can start a test run manually.
+permissions: { contents: write, pull-requests: write, id-token: write }  # least privilege. The action needs id-token.
+concurrency: { group: doc-cleaner }  # only one run at a time
 jobs:
   clean:
     runs-on: ubuntu-latest
-    timeout-minutes: 20     # bound a hung agent
+    timeout-minutes: 20       # stop an agent that does not respond
     steps:
-      - uses: actions/checkout@v6   # pin to a full commit SHA in production
-        # with: { fetch-depth: 0 }  # only if the prompt reasons about git history
-
-      - uses: anthropics/claude-code-action@v1   # pin to a commit SHA, not @v1
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: |
-            --max-turns 20
-            --allowedTools "Read,Glob,Edit,Write,Bash(gh pr:*)"
+          claude_args: --max-turns 20 --allowedTools "Read,Glob,Edit,Write,Bash(gh pr:*)"
           prompt: |
-            Audit README.md, CLAUDE.md, and docs/ against the codebase.
-            Project orientation lives in CLAUDE.md — read it first.
-            Fix only what you can verify is wrong. Open a PR if you changed
-            anything; if everything is accurate, do nothing and say so.
-```
-
-```yaml
-# .github/workflows/claude.yml — interactive @claude responder
+            Audit README.md, CLAUDE.md, and docs/ against the codebase. Read CLAUDE.md first.
+            Fix only what you can verify is wrong, and open a PR. If all is accurate, do nothing.
+---
+# .github/workflows/claude.yml: bot that answers @claude mentions
 on:
   issue_comment: { types: [created] }
-  pull_request_review_comment: { types: [created] }
   issues: { types: [opened, assigned] }
-  pull_request_review: { types: [submitted] }
-
 jobs:
   claude:
-    if: |                   # gate on an explicit mention — don't run on every comment
+    if: |                     # run only on an explicit mention, not on every comment
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'issues' && contains(github.event.issue.body, '@claude'))
     runs-on: ubuntu-latest
-    permissions:            # a Q&A/review bot can be read-only
-      contents: read
-      pull-requests: read
-      issues: read
-      id-token: write
-      actions: read         # so Claude can read CI results on the PR
+    permissions: { contents: read, pull-requests: read, issues: read, id-token: write, actions: read }  # read-only bot
     steps:
-      - uses: actions/checkout@v6
-        with: { fetch-depth: 1 }
-      - uses: anthropics/claude-code-action@v1
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          additional_permissions: |
+          additional_permissions: |  # lets Claude read CI results on the PR
             actions: read
-          # no prompt: Claude follows the instruction in the comment that tagged it
+          # no prompt: Claude does the instruction in the comment that mentions it
 ```
 
 ## Typical usage patterns
 
-- Two distinct modes of the same action: **scheduled autonomous maintenance agents** and an **interactive `@claude` responder** — never one workflow trying to be both. (`JasonLo/jasonlo.dev`, `JasonLo/skill-sommelier`, `JasonLo/uw-s3`)
-- Scheduled agents trigger on `on: schedule` cron + `workflow_dispatch`, carry the whole task as a baked-in `prompt:`, cap work with `claude_args: --max-turns N`, and add a `concurrency` group + `timeout-minutes`. (`JasonLo/jasonlo.dev:.github/workflows/doc-cleaner-claude.yml`, `JasonLo/jasonlo.dev:.github/workflows/wcag-audit-claude.yml`)
-- Interactive workflows fire on `issue_comment` / `pull_request_review` events and use a long `if:` guard so the job only runs when the body contains `@claude`; they pass no `prompt`, letting Claude act on the triggering comment. (`JasonLo/skill-sommelier:.github/workflows/claude.yml`, `JasonLo/uw-s3:.github/workflows/claude.yml`)
+- The same action has two separate modes: **scheduled maintenance agents** and an **interactive `@claude` responder**. One workflow never does both. (seen in `JasonLo/jasonlo.dev`, `JasonLo/skill-sommelier`, `JasonLo/uw-s3`)
+- Scheduled agents trigger on an `on: schedule` cron and `workflow_dispatch`, and they contain the full task in a fixed `prompt:`. They limit work with `claude_args: --max-turns N`, a `concurrency` group, and `timeout-minutes`. (seen in `JasonLo/jasonlo.dev:.github/workflows/doc-cleaner-claude.yml`, `JasonLo/jasonlo.dev:.github/workflows/wcag-audit-claude.yml`)
+- Interactive workflows trigger on `issue_comment` / `pull_request_review` events, and a long `if:` guard runs the job only when the body contains `@claude`. They pass no `prompt`, so Claude acts on the comment that triggered it. (seen in `JasonLo/skill-sommelier:.github/workflows/claude.yml`, `JasonLo/uw-s3:.github/workflows/claude.yml`)
 
 ## Learnings
 
-- **"`@v1` is a stable, safe pin"** → **a floating tag re-pulls whatever was last pushed to it.** Every run re-fetches that tag, so a compromised or changed action executes with your `contents: write` token. Pin third-party actions (`claude-code-action`, `actions/checkout`) to a full commit SHA and bump deliberately; the tag is convenience, the SHA is the trust boundary. (seen in every workflow)
-- **"The prompt is the safety boundary"** → **the workflow's `permissions:` and `--allowedTools` are the boundary; the prompt is intent, not enforcement.** A scheduled agent with `contents: write` and the default toolset can do anything the token permits no matter how firmly the prose says "be conservative, don't delete." Constrain both dials to the task; the read-only Q&A bot is the right instinct, the broad-write agent leaning on prose is the risk. (`JasonLo/jasonlo.dev:.github/workflows/doc-cleaner-claude.yml` vs `JasonLo/uw-s3:.github/workflows/claude.yml`)
-- **"Grant the action the usual write scopes"** → **grant exactly the scopes the job exercises.** The doc and WCAG agents request `issues: write` but only ever open PRs — an unused write grant is standing blast radius for no benefit. Match `permissions:` to what the task actually performs (PRs → `contents`+`pull-requests`; comments-only → read + `id-token`). (`JasonLo/jasonlo.dev:.github/workflows/wcag-audit-claude.yml`)
+- **A floating tag, for example `@v1`, is a stable, safe pin** → **A floating tag runs the code that someone last pushed to it**. A changed or compromised action then runs with your `contents: write` token. The full commit SHA is the trust boundary, so pin third-party actions to it. (seen in every workflow)
+- **The prompt is the safety boundary** → **`permissions:` and `--allowedTools` are the boundary, and the prompt only states intent**. An agent with `contents: write` and the default tools can do anything that the token permits, for all prompt text. Limit both settings to the task. (seen in `JasonLo/jasonlo.dev:.github/workflows/doc-cleaner-claude.yml` and `JasonLo/uw-s3:.github/workflows/claude.yml`)
+- **Grant the usual write scopes** → **Grant only the scopes that the job uses**. The doc and WCAG agents request `issues: write` but only open PRs, so the unused grant adds risk and gives no advantage. (seen in `JasonLo/jasonlo.dev:.github/workflows/wcag-audit-claude.yml`)
 
 ## Agent rules
 
-- ALWAYS pin `anthropics/claude-code-action` and `actions/checkout` to a full commit SHA in production workflows; NEVER trust a floating tag like `@v1` for a job that holds a write token.
-- ALWAYS set `permissions:` to the minimum the task exercises: a Q&A/review bot is read-only + `id-token: write`; only a fix-and-PR agent needs `contents: write` + `pull-requests: write`.
-- NEVER grant a write scope (e.g. `issues: write`) the prompt never uses.
-- ALWAYS constrain tools with `--allowedTools` in `claude_args`; treat `permissions:` + allowed tools as the security boundary, NEVER the prompt prose.
-- ALWAYS gate interactive workflows on an explicit `@claude` mention via the `if:` condition so the job doesn't run on every comment.
-- ALWAYS add `additional_permissions: actions: read` when Claude needs to read CI results on a PR.
-- ALWAYS put durable codebase orientation in `CLAUDE.md` (the action reads it automatically); keep the workflow `prompt:` to the trigger and the task.
-- ALWAYS set `timeout-minutes` and a `concurrency` group on scheduled agents so a hung or overlapping run can't pile up.
-- ALWAYS pair `schedule:` with `workflow_dispatch:` so the agent can be triggered manually for testing.
-- ALWAYS instruct a scheduled agent to no-op (open no PR) when it finds nothing to change.
-- ALWAYS use `fetch-depth: 0` when the agent reasons about git history (dependency drift, recent commits, changelog accuracy); a shallow checkout hides the past.
-- ALWAYS authenticate via `claude_code_oauth_token` (or an API key) from a GitHub secret; NEVER hardcode credentials.
+- ALWAYS pin `anthropics/claude-code-action` and `actions/checkout` to a full commit SHA in production workflows.
+- NEVER trust a floating tag, for example `@v1`, for a job that holds a write token.
+- ALWAYS set `permissions:` to the minimum scopes that the task uses.
+- ALWAYS give a Q&A or review bot only read scopes and `id-token: write`.
+- NEVER give `contents: write` and `pull-requests: write` to a job that does not fix code and open PRs.
+- NEVER grant a write scope, for example `issues: write`, that the task does not use.
+- ALWAYS limit the tools with `--allowedTools` in `claude_args`.
+- ALWAYS treat `permissions:` and the allowed tools as the security boundary.
+- NEVER treat the prompt text as a security boundary.
+- ALWAYS restrict interactive workflows to a direct `@claude` mention in the `if:` condition.
+- ALWAYS add `additional_permissions: actions: read` when Claude must read CI results on a PR.
+- ALWAYS put the permanent guidance for the codebase in `CLAUDE.md`.
+- ALWAYS limit the workflow `prompt:` to the trigger and the task.
+- ALWAYS set `timeout-minutes` and a `concurrency` group on scheduled agents.
+- ALWAYS pair `schedule:` with `workflow_dispatch:`.
+- ALWAYS tell a scheduled agent to open no PR when it finds nothing to change.
+- ALWAYS use `fetch-depth: 0` when the agent examines git history.
+- ALWAYS authenticate with `claude_code_oauth_token` or an API key from a GitHub secret.
+- NEVER hardcode credentials in a workflow.

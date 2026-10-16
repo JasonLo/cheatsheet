@@ -1,11 +1,11 @@
 # Python package release workflow with gh
 
-_Grounded in JasonLo's repos as of 2026-08-31; current practice per [cli.github.com/manual/gh_release_create](https://cli.github.com/manual/gh_release_create) and PyPA packaging guide._
+_Grounded in JasonLo's repos as of 2026-08-31. Current practice is from [cli.github.com/manual/gh_release_create](https://cli.github.com/manual/gh_release_create) and the PyPA packaging guide._
 
 ## Reference snippet
 
 ```bash
-# Atomic release: push branch + tag together, then create the GitHub Release
+# Atomic release: push the branch and the tag together. Then create the GitHub Release.
 git tag v1.2.3
 git push --atomic origin main v1.2.3
 gh release create v1.2.3 \
@@ -16,20 +16,21 @@ gh release create v1.2.3 \
 
 ## Typical usage patterns
 
-- **PEP 723 release script (`uv run scripts/release.py [major|minor|patch]`)**: pre-flight guards (on `main`, clean working tree, synced with remote) → version bump → CHANGELOG stamp → `git commit` + `git tag` → `git push --atomic` → `gh release create --verify-tag`. Self-contained (`uv` installs deps from `# /// script` header on demand). Used in `UW-Madison-DSI/agentic-web-extraction:scripts/release.py` and `JasonLo/uw-s3:scripts/release.py`.
-- **CHANGELOG-driven release notes (`--notes-file -`)**: parse the `## Unreleased` block before any mutation, pipe it to `gh release create --notes-file -` via stdin. The same commit that bumps the version stamps `## Unreleased` → `## vX.Y.Z — YYYY-MM-DD` and re-opens a fresh `## Unreleased` so the next author has a landing zone. Seen in `UW-Madison-DSI/agentic-web-extraction:scripts/release.py`.
-- **Rollback-on-push-failure guard**: if `git push --atomic` fails, immediately `git tag -d vX.Y.Z` + `git reset --mixed HEAD~1`. Once the tag is public (push succeeded), skip the rollback and only print the manual-fix command — no automated undo after remote state exists. Pattern from `UW-Madison-DSI/agentic-web-extraction:scripts/release.py` and `JasonLo/lite-spec:scripts/release.sh`.
+- **PEP 723 release script (`uv run scripts/release.py [major|minor|patch]`).** The script first checks for `main`, a clean working tree, and sync with the remote. Then it increases the version, writes the date into the CHANGELOG, commits, tags, runs `git push --atomic`, and runs `gh release create --verify-tag`. (seen in `UW-Madison-DSI/agentic-web-extraction:scripts/release.py`, `JasonLo/uw-s3:scripts/release.py`)
+- **Release notes from the CHANGELOG (`--notes-file -`).** The script parses the `## Unreleased` block before any change and sends it to `gh release create --notes-file -` on stdin. The version commit renames `## Unreleased` to `## vX.Y.Z — YYYY-MM-DD` and adds a new empty `## Unreleased`. (seen in `UW-Madison-DSI/agentic-web-extraction:scripts/release.py`)
+- **Rollback when the push fails.** If `git push --atomic` fails, the script runs `git tag -d vX.Y.Z` and `git reset --mixed HEAD~1`. After the tag is public, the script does not roll back and prints the manual-fix command. (seen in `UW-Madison-DSI/agentic-web-extraction:scripts/release.py`, `JasonLo/lite-spec:scripts/release.sh`)
 
 ## Learnings
 
-- **Two separate pushes (`git push origin main && git push origin --tags`) leave a race window** → **`git push --atomic origin <branch> <tag>` is the standard**. If the branch push succeeds but the tag push fails, CI can trigger on a commit with no matching release; atomic ensures both refs land together or neither does. (seen in `JasonLo/sound-trim:scripts/release.sh` using the older two-step pattern)
-- **`gh release create` silently auto-creates the tag if it does not exist on the remote** → **always add `--verify-tag` in automated pipelines**. Without it, a failed `git push --atomic` followed by `gh release create` stamps a release at whatever the remote default branch tip happens to be — a phantom tag at the wrong commit. `--verify-tag` turns this into a hard abort instead of a silent misrelease. (pattern from `UW-Madison-DSI/agentic-web-extraction:scripts/release.py`)
-- **Regex-patching `pyproject.toml` to bump the version** → **`uv version --bump <increment>` delegates the write to `uv`**. Manual regex is fragile across TOML formatting variants and Python versions; `uv version` reads and writes the canonical field reliably and prints the new version with `--short` for downstream use. (seen in `JasonLo/uw-s3:scripts/release.py` vs. the regex approach in `UW-Madison-DSI/agentic-web-extraction:scripts/release.py`)
+- **The branch and the tag are two separate updates** → **A release is one transaction**. With two pushes, the branch can arrive without the tag, and CI can run on a commit with no release. The command `git push --atomic origin <branch> <tag>` sends both refs or neither. (seen in `JasonLo/sound-trim:scripts/release.sh`, which uses two pushes)
+- **The release tool uses the tag that you pushed** → **Release creation must check the tag, not create it**. The `gh release create` command creates a missing tag at the tip of the remote default branch, which can be the wrong commit. The `--verify-tag` flag stops the release instead. (seen in `UW-Madison-DSI/agentic-web-extraction:scripts/release.py`)
+- **The version is text that you patch** → **The package tool owns the version field**. A regex on `pyproject.toml` can fail on different TOML formats. `uv version --bump <increment>` writes the correct field, and `--short` prints the new version for the next steps. (seen in `JasonLo/uw-s3:scripts/release.py`, not the regex in `UW-Madison-DSI/agentic-web-extraction:scripts/release.py`)
 
 ## Agent rules
 
-- ALWAYS use `git push --atomic origin <branch> <tag>` to push the release commit and tag in one transaction.
-- ALWAYS pass `--verify-tag` to `gh release create` in any scripted or automated release pipeline.
-- NEVER run `gh release create` before confirming the tag exists on the remote.
-- ALWAYS run pre-flight guards (on `main`, clean working tree, synced with remote) before mutating `pyproject.toml` or creating a tag.
-- NEVER attempt automated rollback once a tag is confirmed pushed — print the manual-fix command instead.
+- ALWAYS use `git push --atomic origin <branch> <tag>` to push the release commit and tag together.
+- ALWAYS pass `--verify-tag` to `gh release create` in a scripted or automated release.
+- NEVER run `gh release create` before you confirm that the tag exists on the remote.
+- ALWAYS check for `main`, a clean tree, and sync with the remote before you change `pyproject.toml` or tag.
+- NEVER roll back automatically after the tag push succeeds.
+- ALWAYS print the manual-fix command when a release fails after the tag is public.

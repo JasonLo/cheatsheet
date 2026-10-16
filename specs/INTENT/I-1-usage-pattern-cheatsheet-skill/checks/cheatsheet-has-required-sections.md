@@ -1,7 +1,17 @@
-# Agent check: produced cheatsheet has a "Typical usage patterns" section and a "Learnings" section pairing each obsolete pattern with its replacement
+# Agent check: Each cheatsheet has a "Typical usage patterns" section and a "Learnings" section.
 
 ## SHALL
-**WHEN** analysis completes **THE SYSTEM SHALL** write one markdown cheatsheet containing a "Typical usage patterns" section and a "Learnings" section that names each obsolete pattern or misconception found alongside its current replacement. [test: agent:specs/INTENT/I-1-usage-pattern-cheatsheet-skill/checks/cheatsheet-has-required-sections.md]
+
+**WHEN** the analysis is complete **THE SYSTEM SHALL** write one markdown cheatsheet with three parts. The first part is a short code snippet that shows the current correct usage of the target. The second part is a "Typical usage patterns" section. The third part is a "Learnings" section. This section gives each old pattern or error and its current replacement. [test: agent:specs/INTENT/I-1-usage-pattern-cheatsheet-skill/checks/cheatsheet-has-required-sections.md]
 
 ## Success criteria
-_Enrich this section with concrete pass conditions: what files to inspect, what patterns count as satisfaction, what file:line evidence the subagent should cite. The seeded SHALL alone is intentionally minimal — `spec-check` will run against whatever is here, so the more specific the better._
+
+- Read `.claude/skills/cheatsheet/SKILL.md`.
+- Read all files in `cheatsheets/*.md`. Do not use a sample.
+- PASS for `.claude/skills/cheatsheet/SKILL.md`: its cheatsheet template has a `## Typical usage patterns` section and a `## Learnings` section.
+- PASS for a cheatsheet: it has a `## Typical usage patterns` heading and a `## Learnings` heading.
+- PASS for a cheatsheet: each Learnings bullet names an old pattern or error and its current replacement. The usual form is `**<old>** → **<new>.**`.
+- FAIL: a cheatsheet does not have one of the two headings.
+- FAIL: a Learnings bullet gives no old pattern or gives no replacement.
+- Cite the `.claude/skills/cheatsheet/SKILL.md` lines of the template.
+- Cite the file:line of the two headings in each cheatsheet. For each failure, cite the file:line of the problem.

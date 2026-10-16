@@ -1,6 +1,6 @@
 # Code preferences with CLAUDE.md
 
-_Grounded in JasonLo's repos as of 2026-06-05; current practice per uv official docs (context7 `/astral-sh/uv`)._
+_Grounded in JasonLo's repos as of 2026-06-05. Current practice is from the Claude Code memory docs (code.claude.com/docs/en/memory) and the uv official docs (context7 `/astral-sh/uv`)._
 
 ## Reference snippet
 
@@ -19,29 +19,37 @@ _Grounded in JasonLo's repos as of 2026-06-05; current practice per uv official 
 
 ## Typical usage patterns
 
-How you actually encode preferences in CLAUDE.md today, distilled to the recurring shapes:
-
-- **A dedicated preferences section near the top** — a short bullet list of cross-cutting style rules, placed before project-specific architecture. You reach for it to set defaults an agent should carry into every file. The header drifts in name across repos (`Code Preferences`, `Code Preference`, `Use preferences`, `Code preferences`) but the intent is identical. (seen in `JasonLo/uw-s3:CLAUDE.md`, and several private repos)
-- **A uv-first toolchain mandate** — `uv run` to execute, `uv sync` to install, `ruff` + `ty` for quality. The recurring instinct is "never touch pip directly," delegating environment management to one tool. (seen in `JasonLo/undock:CLAUDE.md`, and several private repos)
-- **A "verify before you write" research rule** — instruct the agent to check context7 / official docs for current syntax rather than trusting training memory. This is a meta-preference about *how* the agent should work, not what the code looks like. (seen in `JasonLo/uw-s3:CLAUDE.md`, `JasonLo/sound-trim:CLAUDE.md`, and a private repo)
+- A **preferences section near the top** of CLAUDE.md holds short style rules that apply to every file. The title differs between repos, for example `Code Preferences`, `Code Preference`, `Use preferences`, and `Code preferences`. (seen in `JasonLo/uw-s3:CLAUDE.md`, and several private repos)
+- A **uv-first toolchain rule** tells the agent to run code with `uv run` and to install with `uv sync`. The rule also sets `ruff` and `ty` for quality and does not allow direct use of pip. (seen in `JasonLo/undock:CLAUDE.md`, and several private repos)
+- A **research rule** tells the agent to check context7 or the official docs for current syntax. This rule controls how the agent works, not how the code looks. (seen in `JasonLo/uw-s3:CLAUDE.md`, `JasonLo/sound-trim:CLAUDE.md`, and a private repo)
 
 ## Learnings
 
-Each correction names an obsolete or drifted pattern in your CLAUDE.md files, the conceptual reason it changed, and what to do instead:
-
-- **"Each repo restates the full preference block"** → **"Universal preferences live once, at the user level."** The same ~6-bullet block is hand-copied into 7+ repos and has visibly drifted — three different Python floors (`3.12+`, `3.13+`, `3.14+`), four different section titles, typer mandated in some and silently dropped for argparse in one. Drift is the symptom of the wrong altitude: cross-cutting style is a *you* preference, so it belongs in global `~/.claude/CLAUDE.md`; per-repo files should hold only what's genuinely project-specific. (seen across `JasonLo/uw-s3`, `JasonLo/sound-trim`, and several private repos)
-- **"Bootstrap a project with `uv pip install -e .`"** → **"`uv sync` installs the project for you."** Older repos still reach for the pip-emulation mental model — manually editable-installing the package into a venv. In a uv-managed project, `uv sync` / `uv run` install the project automatically; the editable install is implicit. The shift is from "install my package into an environment" to "sync the environment to the lockfile." Reserve `uv pip install -e .` for the one place it still earns its keep: Docker layer caching. (seen in `JasonLo/sound-trim:CLAUDE.md`, and a private repo)
-- **"Use Pydantic for objects with 7+ attributes"** → **"Use Pydantic when data crosses a boundary, not by attribute count."** The count is a proxy for the real trigger: does this data come from / go to an untrusted edge (an API response, a config file, JSON on disk) and need validation or serialization? A 3-field API payload wants Pydantic; a 10-field internal-only struct is happier as a dataclass. Decide on *boundary crossing and validation need*, not field arithmetic. (seen in `JasonLo/uw-s3:CLAUDE.md`)
+- **Restate the preferences in each repo** → **Keep universal preferences one time, at the user level.** General style belongs in global `~/.claude/CLAUDE.md`, and each repo keeps only project-specific guidance. (seen across `JasonLo/uw-s3`, `JasonLo/sound-trim`, and several private repos)
+- **Install the package with `uv pip install -e .`** → **Sync the environment to the lockfile.** In a uv project, `uv sync` and `uv run` install the project automatically. Keep `uv pip install -e .` only for Docker layer caching. (seen in `JasonLo/sound-trim:CLAUDE.md`, and a private repo)
+- **Use Pydantic for objects with 7+ attributes** → **Use Pydantic when data crosses a boundary.** The trigger is validation of API, config, or disk data. An internal-only struct is a dataclass for all field counts. (seen in `JasonLo/uw-s3:CLAUDE.md`)
 
 ## Agent rules
 
-- ALWAYS run Python via `uv run`; manage dependencies with `uv add` / `uv sync`. NEVER invoke pip directly.
-- ALWAYS set up a project with `uv sync` — it installs the project automatically. NEVER `uv pip install -e .` for local dev; reserve it for Docker layer caching.
-- NEVER add `from __future__ import annotations` — target Python 3.14, where deferred annotations and `X | Y` unions are native.
-- ALWAYS use static typing; lint + format with `ruff` and type-check with `ty`.
-- ALWAYS prefer `typer` for CLIs and Pydantic v2 for data that crosses a boundary (API, disk, config); use a dataclass for internal-only structs.
-- ALWAYS write one-line docstrings for simple functions, avoid unnecessary comments, and use guard clauses over deep nesting.
-- ALWAYS check context7 / official docs for current syntax before using a library API — don't trust training memory.
-- NEVER copy a full preference block into a new repo's CLAUDE.md — keep universal preferences in global `~/.claude/CLAUDE.md`; per-repo files hold only project-specific guidance.
-- ALWAYS restate an inverted preference explicitly when the target platform can't support a default (e.g. CircuitPython: no typing, no f-strings, `%` formatting only).
-- ALWAYS expand a "merge" request inside a worktree into the full ritual: commit → rebase `main` → `git merge --ff-only` → remove the worktree and delete the branch → push. NEVER run a bare `git merge` and stop.
+- ALWAYS run Python with `uv run`.
+- ALWAYS manage dependencies with `uv add` and `uv sync`.
+- NEVER invoke pip directly.
+- ALWAYS prepare a project with `uv sync`.
+- NEVER use `uv pip install -e .` except for Docker layer caching.
+- NEVER add `from __future__ import annotations`.
+- ALWAYS use static typing.
+- ALWAYS lint and format with `ruff`.
+- ALWAYS type-check with `ty`.
+- ALWAYS use `typer` for CLIs.
+- ALWAYS use Pydantic v2 for data that crosses a boundary, for example an API, disk, or config.
+- ALWAYS use a dataclass for internal-only structs.
+- ALWAYS write one-line docstrings for simple functions.
+- NEVER add unnecessary comments.
+- ALWAYS use guard clauses instead of deep nesting.
+- ALWAYS check context7 or the official docs for current syntax before you use a library API.
+- NEVER copy a full preference block into the CLAUDE.md of a new repo.
+- ALWAYS keep universal preferences in global `~/.claude/CLAUDE.md`.
+- ALWAYS limit the CLAUDE.md of each repo to project-specific guidance.
+- ALWAYS state the opposite defaults for limited platforms, for example no typing, no f-strings, and `%` formatting on CircuitPython.
+- ALWAYS treat a "merge" request in a worktree as this sequence: commit, rebase onto `main`, `git merge --ff-only`, remove the worktree and branch, and push.
+- NEVER run a bare `git merge` and stop.

@@ -1,18 +1,22 @@
 # Implementation Plan — I-2 O-6: Comment-to-generate workflow (`cheatsheet-generate.yml`)
 
-> Agent-writable, regenerable working doc. `intent.md` is the source of truth.
-> Scope: outcome **O-6** only (the other five outcomes are already satisfied).
+> This file is an agent-writable working doc that an agent can generate again. The source of truth is `intent.md`. Scope: this plan covers only outcome **O-6**. The other five outcomes already pass.
 
 ## Goal
 
-Close the recommend → select → generate → review loop entirely in the GitHub web UI. When the repository owner comments a topic selection (e.g. "1 and 3") on an open cheatsheet-recommendations issue, a guarded workflow generates each selected sheet via the I-1 `cheatsheet` skill and opens exactly one human-reviewed PR per selected topic — no local step, no auto-merge.
+Complete the loop of recommend, select, generate, and review fully in the GitHub web UI.
+The repository owner comments a topic selection on an open cheatsheet-recommendations issue, for example "1 and 3".
+Then a guarded workflow generates each selected sheet with the I-1 `cheatsheet` skill.
+The workflow opens exactly one PR for each selected topic, and a human reviews each PR. There is no local step and no auto-merge.
 
-This requires:
-1. A new workflow file `.github/workflows/cheatsheet-generate.yml`.
-2. A companion edit to `.github/workflows/cheatsheet-recommend.yml` (the table's "Generate with" column).
-3. Enriching `specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/web-end-to-end-generate-from-selection.md` with concrete success criteria.
+This work needs these changes:
+1. Add a new workflow file `.github/workflows/cheatsheet-generate.yml`.
+2. Make a related edit to `.github/workflows/cheatsheet-recommend.yml`. The edit changes the "Generate with" column of the table.
+3. Add concrete success criteria to `specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/web-end-to-end-generate-from-selection.md`.
 
-The intent mandates this exactly: `intent.md` O-6 + its two tests, and the locked event-driven constraint. The `shell:` test asserts the filename `cheatsheet-generate.yml` and the tokens `issue_comment`, `concurrency`, `timeout-minutes`, plus no floating `@vN` tag — so the filename and those four facts are non-negotiable.
+The intent sets these exact requirements: `intent.md` O-6, its two tests, and the locked event-driven constraint.
+The `shell:` test checks the filename `cheatsheet-generate.yml` and the tokens `issue_comment`, `concurrency`, and `timeout-minutes`.
+It also checks that no floating `@vN` tag is present. For this reason, the filename and those four facts are fixed.
 
 ---
 
@@ -34,11 +38,12 @@ on:
         required: true
 ```
 
-`workflow_dispatch` carries two inputs because in manual mode there is no `github.event.comment` to read — the agent needs to be told which issue and which numbers. (The existing two workflows use empty `workflow_dispatch: {}`; here we need inputs so manual testing can exercise the real generate path.)
+`workflow_dispatch` has two inputs because manual mode has no `github.event.comment` to read. The agent must get the issue and the numbers from the inputs.
+The two current workflows use an empty `workflow_dispatch: {}`. This workflow needs inputs, so that manual tests can run the real generate path.
 
 ### The job-level `if:` guard
 
-Three conditions must ALL hold for the `issue_comment` path; the dispatch path always runs:
+The `issue_comment` path runs only when ALL the conditions below are true. The dispatch path always runs:
 
 ```yaml
 jobs:
@@ -52,63 +57,70 @@ jobs:
        startsWith(github.event.issue.title, 'Cheatsheet recommendations'))
 ```
 
-Guard rationale:
+Reasons for each guard:
 
-- **Owner-only**: `github.event.comment.user.login == github.repository_owner` (resolves to the repo owner; portable, not a hardcoded login).
-- **Recommendations-issue marker**: `startsWith(github.event.issue.title, 'Cheatsheet recommendations')` — matches the title the recommender writes (`Cheatsheet recommendations — week of <YYYY-MM-DD>`). The title IS the marker; no extra label needed.
+- **Owner-only**: `github.event.comment.user.login == github.repository_owner`. This value is the repo owner. It is portable and is not a hardcoded login.
+- **Recommendations-issue marker**: `startsWith(github.event.issue.title, 'Cheatsheet recommendations')`. This matches the title that the recommender writes (`Cheatsheet recommendations — week of <YYYY-MM-DD>`).
+  The title IS the marker, so the issue does not need an extra label.
 - **Open issue only**: `github.event.issue.state == 'open'`.
-- **Not a PR comment**: `github.event.issue.pull_request == null` (`issue_comment` fires for PR comments too).
+- **Not a PR comment**: `github.event.issue.pull_request == null`. This is necessary because `issue_comment` also runs for PR comments.
 
-Defense-in-depth in the prompt: re-confirm via `gh issue view` that the issue is open and the title matches before any write. The `if:` is the real boundary — permissions + allowedTools enforce intent, prose only states it.
+The prompt adds a second check. Before any write, it uses `gh issue view` to confirm again that the issue is open and the title matches.
+The `if:` is the real security boundary. The permissions and allowedTools enforce the intent, and the prose only states it.
 
 ### CRITICAL implication: `issue_comment` runs from the default branch
 
-`issue_comment`-triggered workflows always execute the version on the **default branch** (`main`), regardless of any open PR. Consequences (document in a top-of-file comment):
+A workflow that `issue_comment` starts always runs the version on the **default branch** (`main`). Open PRs have no effect on this.
+Write these results in a comment at the top of the file:
 
-1. **This workflow only takes effect after it is merged to `main`.** The `issue_comment` path cannot be tested from a feature branch — that's why the `workflow_dispatch` path with inputs exists.
-2. The companion edit to `cheatsheet-recommend.yml` must also be merged to `main` before issued recommendations carry the correct instruction.
+1. **This workflow works only after you merge it to `main`.** You cannot test the `issue_comment` path from a feature branch. For this reason, the `workflow_dispatch` path has inputs.
+2. You must also merge the related edit to `cheatsheet-recommend.yml` to `main`. Before that merge, new recommendations do not have the correct instruction.
 
 ---
 
-## 2. Mapping "1 and 3" → use-case + target
+## 2. Map "1 and 3" → use-case + target
 
-The numbers are row indices into the markdown table the recommender wrote. Its columns:
+The numbers are row indices into the markdown table that the recommender wrote. The table has these columns:
 
 ```
 | # | Topic (use case) | Target | Why now | Evidence | Generate with |
 ```
 
-Resolving a selection: read the issue body, parse the table, and for each selected `#` extract **Topic (use case)** (col 2) and **Target** (col 3, backtick-wrapped). Those map onto the I-1 skill's inputs: use case = free text, `--target` = the library/tool.
+To resolve a selection, the agent reads the issue body and parses the table. For each selected `#`, it gets **Topic (use case)** (col 2) and **Target** (col 3, in backticks).
+These values are the inputs of the I-1 skill. The use case is free text, and `--target` is the library or tool.
 
-This parsing is judgment-laden (free-form comment "1 and 3" / "1,3" / "1 & 3"; natural-language markdown table) so per P-6 it belongs in the agent prompt, not a rigid parser. The agent:
+This parsing needs judgment, because the comment is free-form ("1 and 3", "1,3", or "1 & 3") and the table is natural-language markdown.
+For this reason, P-6 puts the parsing in the agent prompt, not in a rigid parser. The agent does these steps:
 
-1. `gh issue view <n> --json title,body,state` (default token, THIS repo) to fetch the table.
-2. Parse the comment body for selected integers. Accept "1 and 3", "1,3", "1 & 3", "1 3".
+1. Run `gh issue view <n> --json title,body,state` with the default token on THIS repo to get the table.
+2. Parse the comment body for the selected integers. Accept "1 and 3", "1,3", "1 & 3", and "1 3".
 3. For each selected number, read that table row → `(use_case, target)`.
-4. If a number has no matching row, skip it and report; never invent a topic.
+4. If a number has no matching row, skip it and report it. Never invent a topic.
 
-In `workflow_dispatch` mode, the issue number and selection come from `inputs.issue_number` / `inputs.selection`; everything downstream is identical.
+In `workflow_dispatch` mode, the issue number and selection come from `inputs.issue_number` / `inputs.selection`. All the later steps are the same.
 
-The comment body and event fields are passed to the agent via `env:` (so the prompt stays static and untrusted comment text is never interpolated into the prompt string — avoids prompt-injection via YAML interpolation): e.g. `SELECTION_COMMENT: ${{ github.event.comment.body }}`, `ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}`, `DISPATCH_SELECTION: ${{ inputs.selection }}`.
+The workflow gives the comment body and event fields to the agent through `env:`. As a result, the prompt stays static.
+The workflow never puts untrusted comment text into the prompt string. This prevents prompt injection through YAML interpolation.
+For example: `SELECTION_COMMENT: ${{ github.event.comment.body }}`, `ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}`, `DISPATCH_SELECTION: ${{ inputs.selection }}`.
 
 ---
 
 ## 3. The `claude-code-action` invocation
 
-Mirror `cheatsheet-refresh.yml` (closest precedent: generates sheets, branches, one PR per sheet).
+Copy the structure of `cheatsheet-refresh.yml`. It is the closest example because it generates sheets, makes branches, and opens one PR for each sheet.
 
-### Pinning + auth
+### Pins + auth
 
-Identical SHA pins to the existing two workflows:
+Use the same SHA pins as the two current workflows:
 - `actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6`
 - `anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1`
 - `claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}`, `github_token: ${{ github.token }}`.
 
-Checkout with `fetch-depth: 0` so per-topic branches fork cleanly off `main`.
+Check out with `fetch-depth: 0`, so that each topic branch starts cleanly from `main`.
 
 ### `permissions:` (least privilege)
 
-Opens PRs and pushes branches in THIS repo; does NOT write issues:
+The job opens PRs and pushes branches in THIS repo. It does NOT write issues:
 
 ```yaml
 permissions:
@@ -117,7 +129,7 @@ permissions:
   id-token: write        # OIDC, required by the action
 ```
 
-Do NOT add `issues: write` unless the optional ack-comment feature is adopted (default: skip the ack).
+Do NOT add `issues: write` unless you adopt the optional ack-comment feature. The default is to skip the ack.
 
 ### `concurrency` + `timeout-minutes`
 
@@ -127,11 +139,14 @@ concurrency:
   cancel-in-progress: false
 ```
 
-Keying on the issue number lets selections on different issues run in parallel while serializing repeated comments on the same issue (avoids two runs racing to create the same branch). `cancel-in-progress: false` queues rather than kills. `timeout-minutes: 60` (between recommender's 30 and refresh's 90; a selection is at most 3 sheets).
+The group key is the issue number. Selections on different issues can then run in parallel.
+Repeated comments on the same issue run one after the other. Then two runs cannot both try to create the same branch.
+The setting `cancel-in-progress: false` puts a new run in a queue and does not stop the old run.
+Use `timeout-minutes: 60`. This is between the 30 minutes of the recommender and the 90 minutes of refresh. A selection has a maximum of 3 sheets.
 
 ### `env`
 
-Two-token rule per O-3:
+Use the two-token rule from O-3:
 
 ```yaml
 env:
@@ -142,77 +157,100 @@ env:
   DISPATCH_SELECTION: ${{ inputs.selection }}
 ```
 
-Keep the `GH_SCAN_TOKEN` preflight step that fails fast if the token is unset (the skill mines the user's repos, so the scan token is required).
+Keep the `GH_SCAN_TOKEN` preflight step that fails immediately if the token is missing. The skill mines the repos of the user, so the scan token is necessary.
 
 ### `--allowedTools` boundary
 
-The security boundary. Take the refresh toolset and ADD `gh issue view`; allow gh issue/PR read, branch push, gh pr create, uv run; **must NOT allow any merge**:
+This is the security boundary. Start from the refresh toolset and ADD `gh issue view`.
+Allow gh issue and PR reads, branch push, gh pr create, and uv run. The set **must NOT allow any merge**:
 
 ```
 --max-turns 120
 --allowedTools "Read,Glob,Grep,Edit,Write,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(git status:*),Bash(git diff:*),Bash(git switch:*),Bash(git checkout:*),Bash(git restore:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(uv run:*)"
 ```
 
-Boundary notes:
-- **Allowed reads**: `gh issue view`, `gh issue list`, `gh pr list`, plus scan-token cross-repo reads (`gh search code/commits`, `gh api`, `gh repo view`).
-- **Allowed writes**: `git push`, `gh pr create` only.
-- **Deliberate omissions**: no `gh pr merge`, no `gh pr review`, no `Bash(gh pr:*)` wildcard (would let merge through), no `gh issue create/edit/comment`, no `gh api -X`/`--method` mutations. The narrow per-subcommand grants are what enforce "no auto-merge."
-- `--max-turns 120`: a selection generates up to 3 sheets from scratch (full mine→ground→author each), so more than the recommender's 60, less than refresh's 150.
+Notes about the boundary:
+- **Allowed reads**: `gh issue view`, `gh issue list`, `gh pr list`, and the cross-repo reads with the scan token (`gh search code/commits`, `gh api`, `gh repo view`).
+- **Allowed writes**: only `git push` and `gh pr create`.
+- **Deliberate omissions**: no `gh pr merge`, no `gh pr review`, and no `Bash(gh pr:*)` wildcard, because the wildcard lets a merge occur.
+  Also no `gh issue create/edit/comment` and no `gh api -X`/`--method` mutations. The narrow grants for each subcommand enforce "no auto-merge."
+- `--max-turns 120`: a selection generates a maximum of 3 sheets from the start. Each sheet needs the full mine→ground→author sequence.
+  For this reason, the value is more than the 60 of the recommender and less than the 150 of refresh.
 
 ### Prompt structure
 
-Follow the refresh prompt skeleton: Orientation → Two-token rule → Privacy → Task (per-topic loop) → Finish/report.
+Use the structure of the refresh prompt: Orientation → Two-token rule → Privacy → Task (loop for each topic) → Finish/report.
 
-- **Orientation**: read `CLAUDE.md`, `specs/CONSTITUTION.md`, `.claude/skills/cheatsheet/SKILL.md` ("SKILL.md is your generation procedure"). Resolve login `gh api user --jq .login`, capture `date -u +%Y-%m-%d`, note you start on the default branch.
-- **Resolve the selection** (O-6-specific): "Read `$ISSUE_NUMBER` with `gh issue view "$ISSUE_NUMBER" --json title,body,state`. Confirm OPEN and title begins `Cheatsheet recommendations` — else STOP, open no PR. Parse its markdown table. Selected numbers come from `$SELECTION_COMMENT` (issue_comment) or `$DISPATCH_SELECTION` (manual). Accept '1 and 3', '1,3', '1 & 3'. For each selected #, extract Topic (col 2) + Target (col 3) — the I-1 inputs. Skip numbers with no matching row and report; never invent a topic."
-- **Two-token rule** (NON-NEGOTIABLE): cross-repo reads prefix `GH_TOKEN=$GH_SCAN_TOKEN`; writes (branch push, `gh pr create`) and the issue read use plain `gh`/`git`; never read other repos with the default token; never write with the scan token. Add: "You may NEVER merge, approve, or close anything — you only open PRs."
-- **Privacy P-7**: resolve each mined repo's visibility; never put a private repo's name/slug/URL or verbatim code in any committed file or PR text; generalize private patterns; public repos may be cited.
-- **Task — the per-topic loop** (§4).
-- **Finish**: report the issue read, the selection parsed, the topics resolved, the PRs opened (with branch names), any skipped/duplicate/unresolved numbers. If nothing generated, open zero PRs and say so.
+- **Orientation**: read `CLAUDE.md`, `specs/CONSTITUTION.md`, and `.claude/skills/cheatsheet/SKILL.md` ("SKILL.md is your generation procedure").
+  Get the login with `gh api user --jq .login`. Record the date with `date -u +%Y-%m-%d`. Note that the run starts on the default branch.
+- **Resolve the selection** (specific to O-6): use this prompt text.
+  "Read `$ISSUE_NUMBER` with `gh issue view "$ISSUE_NUMBER" --json title,body,state`. Make sure that the issue is OPEN.
+  Make sure that the title starts with `Cheatsheet recommendations`. If not, STOP and open no PR. Parse the markdown table of the issue.
+  The selected numbers come from `$SELECTION_COMMENT` (issue_comment) or `$DISPATCH_SELECTION` (manual). Accept '1 and 3', '1,3', and '1 & 3'.
+  For each selected #, get the Topic (col 2) and the Target (col 3). These are the I-1 inputs.
+  Skip numbers that have no matching row and report them. Never invent a topic."
+- **Two-token rule** (NON-NEGOTIABLE): run each cross-repo read through `uv run scripts/gh_scan.py`. Use plain `gh`/`git` for writes (branch push, `gh pr create`) and for the issue read.
+  Never read other repos with the default token. Never write with the scan token. Add this text: "You may NEVER merge, approve, or close anything. You only open PRs."
+- **Privacy P-7**: find the visibility of each mined repo. Never put the name, slug, URL, or exact code of a private repo in a committed file or in PR text.
+  Make private patterns general. You can cite public repos.
+- **Task — the loop for each topic** (§4).
+- **Finish**: report the issue that the agent read, the parsed selection, the resolved topics, and the opened PRs with their branch names.
+  Also report all numbers that the agent skipped, found as duplicates, or did not resolve. If the agent generated nothing, it opens zero PRs and says so.
 
 ---
 
-## 4. Per-topic loop: branch, isolation, index, PR shape
+## 4. Loop for each topic: branch, isolation, index, PR shape
 
-Reuse the refresh per-sheet pattern, keyed on selected topics. **For each selected `(use_case, target)`:**
+Use the refresh pattern for each sheet again, but use the selected topics as the key. **For each selected `(use_case, target)`:**
 
-1. **Dup-PR guard** (before any write): compute the slug, then `gh pr list --state open --search "generate <slug>" --json headRefName`. If an open PR exists for this branch, SKIP. Also: if the sheet already exists in `cheatsheets/<slug>.md` on main, skip and report "already covered" (this workflow generates NEW sheets; refreshing existing ones is the monthly job's responsibility).
+1. **Dup-PR guard** (before any write): compute the slug, then run `gh pr list --state open --search "generate <slug>" --json headRefName`. If an open PR exists for this branch, SKIP the topic.
+   Also, if the sheet already exists in `cheatsheets/<slug>.md` on main, skip it and report "already covered".
+   This workflow generates NEW sheets. The monthly job refreshes the current sheets.
 
-2. **Branch off the default branch**: `auto/generate/<slug>` where `<slug>` is the lowercased, hyphenated `use case + target` exactly as the skill computes it. One branch per topic. `git switch -c auto/generate/<slug>`. (Append `-<YYYY-MM>` only if collision with an old closed branch is a concern.)
+2. **Make a branch from the default branch**: use `auto/generate/<slug>`. `<slug>` is the `use case + target` in lowercase with hyphens, exactly as the skill computes it.
+   Make one branch for each topic with `git switch -c auto/generate/<slug>`. Add `-<YYYY-MM>` only if a collision with an old closed branch is possible.
 
-3. **Generate the sheet** via the I-1 skill workflow: write `cheatsheets/<slug>.md` with the exact required structure (H1 `# <use case> with <target>`, grounding line, Reference snippet, Typical usage patterns capped at 3, Learnings capped at 3, Agent rules).
+3. **Generate the sheet** with the I-1 skill workflow. Write `cheatsheets/<slug>.md` with the exact necessary structure.
+   The structure is: H1 `# <use case> with <target>`, grounding line, Reference snippet, Typical usage patterns (max 3), Learnings (max 3), and Agent rules.
 
-4. **Regenerate the index deterministically** (P-6 / P-4): `uv run scripts/register_cheatsheet.py` and stage `index.md`. Unlike refresh (which re-stages index only if a title changed), a NEW sheet always adds an `index.md` row, so `index.md` will always change and must always be staged.
+4. **Generate the index again deterministically** (P-6 / P-4): run `uv run scripts/register_cheatsheet.py` and stage `index.md`.
+   Refresh stages the index again only if a title changed. But a NEW sheet always adds a row to `index.md`. For this reason, `index.md` always changes, and you must always stage it.
 
-5. **Commit, push, open ONE PR**:
-   - `git add cheatsheets/<slug>.md index.md`, commit, `git push -u origin auto/generate/<slug>`.
-   - `gh pr create` titled `feat(cheatsheet): add <slug>`. Body: summarize what the sheet covers (use case + target), the doc source it was grounded in, and `Closes selection from #<ISSUE_NUMBER>` linking back to the recommendations issue — NOT a raw diff, NEVER any private repo identifier/content (P-7). No auto-merge; human-reviewed.
+5. **Commit, push, and open ONE PR**:
+   - Run `git add cheatsheets/<slug>.md index.md`, commit, and run `git push -u origin auto/generate/<slug>`.
+   - Run `gh pr create` with the title `feat(cheatsheet): add <slug>`. The body gives a summary of the sheet (use case + target) and the doc source that grounds it.
+     The body also has `Closes selection from #<ISSUE_NUMBER>`, which links to the recommendations issue.
+     Do NOT put a raw diff in the body. NEVER put a private repo identifier or private content in it (P-7). There is no auto-merge, and a human reviews the PR.
 
-6. **Isolate the next topic**: `git switch <default-branch>` and `git restore .` before the next selected topic so each PR contains only its own sheet + index.md row.
+6. **Isolate the next topic**: run `git switch <default-branch>` and `git restore .` before the next selected topic. Then each PR has only its own sheet and its own index.md row.
 
-**One-PR-per-topic isolation** is enforced structurally: branch-per-slug + restore-between-topics + dup-guard. Three selected numbers → at most three PRs (fewer if duplicates/already-covered/unresolved).
+The structure enforces **one PR for each topic**. It uses one branch for each slug, a restore between topics, and the dup-guard.
+Three selected numbers give a maximum of three PRs. The number is smaller if some topics are duplicates, already covered, or not resolved.
 
 ---
 
 ## 5. Companion change to `cheatsheet-recommend.yml`
 
-The locked constraint requires the recommendations issue's "Generate with" instruction to reflect the comment-to-generate path rather than a local `/cheatsheet` command. Today the table template hardcodes a local command:
+The locked constraint has a requirement for the "Generate with" instruction in the recommendations issue. The instruction must show the comment-to-generate path, not a local `/cheatsheet` command.
+At this time, the table template has a fixed local command:
 
 ```
 | 1 | <use case> | `<target>` | <one line> | `owner/repo` (...) | `/cheatsheet <use case> --target <target>` |
 ```
 
-That contradicts O-6's "no local execution." Edit the prompt's table template so the column no longer tells the user to run a local command.
+That does not agree with the "no local execution" rule of O-6. Edit the table template in the prompt, so that the column does not tell the user to run a local command.
 
-**Recommended: Option A with the column removed** (P-3 simplicity). Drop the `| Generate with |` header, its separator cell, and the `/cheatsheet ...` cell. Rely on the existing closing line `Reply with the numbers to add (e.g. "1 and 3"); I'll generate those cheatsheets.` — which now actually resolves to the generate workflow. Strengthen the closing ask to make clear it must be the **repository owner** commenting on **this open issue**. Recommender permissions/tools unchanged.
+**Recommended: Option A, which removes the column** (P-3 simplicity). Remove the `| Generate with |` header, its separator cell, and the `/cheatsheet ...` cell.
+Keep the current closing line `Reply with the numbers to add (e.g. "1 and 3"); I'll generate those cheatsheets.` A reply to this line now starts the generate workflow.
+Make the closing request clearer: the **repository owner** must comment on **this open issue**. Do not change the permissions or tools of the recommender.
 
-(Alternative Option B: keep the column but change the cell to e.g. `Comment "1" on this issue`.)
+Option B is an alternative. It keeps the column but changes the cell to a text such as `Comment "1" on this issue`.
 
-(Note: cosmetic "(O-N)" markers inside `SKILL.md` refer to the I-1 intent's outcomes, not this I-2 O-6 — no change there.)
+Note: the "(O-N)" markers inside `SKILL.md` are only cosmetic. They refer to the outcomes of the I-1 intent, not to this I-2 O-6. Do not change them.
 
 ---
 
-## 6. Satisfying O-6's two tests
+## 6. Satisfy the two tests of O-6
 
 ### Test 1 — the `shell:` structural test
 
@@ -224,56 +262,85 @@ test -f .github/workflows/cheatsheet-generate.yml
 && ! grep -REn 'uses:.*@v[0-9]+[[:space:]]*$' .github/workflows/cheatsheet-generate.yml
 ```
 
-The design satisfies every clause: exact filename; `on: issue_comment:` present; `concurrency:` block; `timeout-minutes: 60`; both `uses:` lines SHA-pinned with the version only in a trailing `# v6`/`# v1` comment (the regex anchors `@vN` to end-of-line, so the comment is fine). Must not regress the dir-wide O-5 structural test either.
+The design satisfies each clause. It has the exact filename, `on: issue_comment:`, a `concurrency:` block, and `timeout-minutes: 60`.
+Both `uses:` lines have SHA pins, and the version is only in a trailing `# v6`/`# v1` comment.
+The regex requires `@vN` at the end of the line, so the comment does not cause a failure. The change must also not break the O-5 structural test for the full directory.
 
 ### Test 2 — the agent check (`checks/web-end-to-end-generate-from-selection.md`)
 
-Enrich its `## Success criteria` (the only writable part — the SHALL is human-owned) with concrete file:line-citable pass conditions:
+Add concrete pass conditions with file:line citations to its `## Success criteria`. Only this part is writable, because a human owns the SHALL:
 
-> Inspect `.github/workflows/cheatsheet-generate.yml` and cite file:line evidence for each:
-> - **Trigger + guard**: `on: issue_comment: types: [created]` present and paired with `workflow_dispatch`. The job `if:` restricts to (a) the repository owner, (b) an OPEN issue, (c) a recommendations issue (title-prefix `Cheatsheet recommendations`), (d) excludes PR comments. The `workflow_dispatch` path accepts an issue number + selection so the path is testable without a live comment.
-> - **Selection → inputs mapping**: prompt instructs the agent to read the issue body via `gh issue view`, parse the markdown table, map each selected number to its (use case, target) row, skip numbers with no matching row, never invent topics.
-> - **Generation via the I-1 skill**: prompt directs the agent to follow `.claude/skills/cheatsheet/SKILL.md` to author `cheatsheets/<slug>.md` and run `uv run scripts/register_cheatsheet.py` to regenerate `index.md`.
-> - **One human-reviewed PR per topic, no auto-merge**: per-topic branch (`auto/generate/<slug>`), `git restore`/`git switch` isolation between topics, dup-PR guard via `gh pr list`, `gh pr create` per topic, NO merge/approve/close. `--allowedTools` includes `gh pr create` + `git push` but excludes any `gh pr merge`/`gh pr review`/wildcard `gh pr:*`. `permissions:` grants only `contents: write`, `pull-requests: write`, `id-token: write` (no `issues: write`).
-> - **Hardening**: both third-party actions SHA-pinned, `concurrency` group present, `timeout-minutes` set.
-> - **Two-token rule (O-3)**: cross-repo reads prefixed with `GH_TOKEN=$GH_SCAN_TOKEN`; writes use default `github.token`; `GH_SCAN_TOKEN` preflight present.
-> - **Privacy (P-7)**: prompt forbids private repo name/slug/URL/verbatim content in committed files or PR text; requires generalization.
-> - **Web-only loop**: confirm the companion `cheatsheet-recommend.yml` table no longer instructs a local `/cheatsheet` command — the only call to action is commenting the number(s), so the loop completes in the web UI.
+Suggested text: examine `.github/workflows/cheatsheet-generate.yml` and cite file:line evidence for each item:
+- **Trigger + guard**: `on: issue_comment: types: [created]` is present together with `workflow_dispatch`.
+  The job `if:` limits the run to (a) the repository owner, (b) an OPEN issue, and (c) a recommendations issue (title-prefix `Cheatsheet recommendations`). It also (d) excludes PR comments.
+  The path for `workflow_dispatch` accepts an issue number and a selection. Then you can test the path without a live comment.
+- **Selection → inputs mapping**: the prompt tells the agent to read the issue body with `gh issue view` and to parse the markdown table.
+  The agent maps each selected number to its (use case, target) row. It skips numbers that have no matching row and never invents topics.
+- **Generation with the I-1 skill**: the prompt tells the agent to follow `.claude/skills/cheatsheet/SKILL.md` to write `cheatsheets/<slug>.md`.
+  The prompt also tells it to run `uv run scripts/register_cheatsheet.py` to generate `index.md` again.
+- **One human-reviewed PR for each topic, no auto-merge**: the workflow uses one branch for each topic (`auto/generate/<slug>`) and `git restore`/`git switch` isolation between topics.
+  It has a dup-PR guard with `gh pr list` and one `gh pr create` for each topic. It has NO merge, approve, or close.
+  `--allowedTools` has `gh pr create` and `git push`, but it does not have `gh pr merge`, `gh pr review`, or the wildcard `gh pr:*`.
+  `permissions:` gives only `contents: write`, `pull-requests: write`, and `id-token: write` (no `issues: write`).
+- **Hardening**: both third-party actions have SHA pins. A `concurrency` group is present, and the job sets `timeout-minutes`.
+- **Two-token rule (O-3)**: each cross-repo read runs through `uv run scripts/gh_scan.py`. Writes use the default `github.token`. The `GH_SCAN_TOKEN` preflight is present.
+- **Privacy (P-7)**: the prompt does not allow the name, slug, URL, or exact content of a private repo in committed files or PR text. It requires general descriptions.
+- **Web-only loop**: make sure that the table in the related `cheatsheet-recommend.yml` does not tell the user to run a local `/cheatsheet` command.
+  The only call to action is to comment the number(s). Then the loop completes in the web UI.
 
 ---
 
 ## 7. Step-by-step task list
 
-1. **Create `.github/workflows/cheatsheet-generate.yml`**: top-of-file comment (purpose + "issue_comment runs from default branch" caveat); `on: issue_comment.created` + `workflow_dispatch` with `issue_number`/`selection` inputs; the job `if:` guard (§1); `permissions:` (contents/pull-requests/id-token write); `concurrency` keyed on issue number; `timeout-minutes: 60`; `env` with two tokens + three event/input vars; `GH_SCAN_TOKEN` preflight; checkout (SHA-pinned, `fetch-depth: 0`); `claude-code-action` (SHA-pinned) with `--max-turns 120`, the `--allowedTools` set (no merge), and the prompt (§3–§4).
-2. **Edit `.github/workflows/cheatsheet-recommend.yml`**: drop the "Generate with" column (header, separator, `/cheatsheet ...` cell); keep/strengthen the closing reply-to-generate line (Option A, §5).
-3. **Edit `specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/web-end-to-end-generate-from-selection.md`**: replace the placeholder `## Success criteria` with the enriched criteria (§6). Only the non-SHALL section.
-4. **Self-verify the `shell:` test locally**: run the exact command from the O-6 citation (read-only grep/test) and the dir-wide floating-tag scan from O-5.
-5. **(Operational, out of code scope)** Confirm secrets `GH_SCAN_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` exist; merge to `main` (required for the `issue_comment` trigger to take effect).
+1. **Create `.github/workflows/cheatsheet-generate.yml`** with these parts:
+   - A comment at the top of the file. It gives the purpose and the caveat that "issue_comment runs from default branch".
+   - `on: issue_comment.created` and `workflow_dispatch` with the `issue_number`/`selection` inputs.
+   - The job `if:` guard (§1) and `permissions:` (contents/pull-requests/id-token write).
+   - `concurrency` with the issue number as its key, and `timeout-minutes: 60`.
+   - `env` with the two tokens and the three event/input variables, and the `GH_SCAN_TOKEN` preflight.
+   - Checkout with a SHA pin and `fetch-depth: 0`.
+   - `claude-code-action` with a SHA pin, `--max-turns 120`, the `--allowedTools` set without merge, and the prompt (§3–§4).
+2. **Edit `.github/workflows/cheatsheet-recommend.yml`**: remove the "Generate with" column (header, separator, and the `/cheatsheet ...` cell). Keep the closing reply-to-generate line and make it clearer (Option A, §5).
+3. **Edit `specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/web-end-to-end-generate-from-selection.md`**: replace the placeholder `## Success criteria` with the new criteria (§6).
+   Change only the section that is not the SHALL.
+4. **Verify the `shell:` test locally**: run the exact command from the O-6 citation. It uses only read-only grep and test. Also run the floating-tag scan for the full directory from O-5.
+5. **(Operational, out of code scope)** Make sure that the secrets `GH_SCAN_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` exist.
+   Merge to `main`. The `issue_comment` trigger works only after this merge.
 
 ## Risks / edge cases
 
-- **Comment on a closed issue** → blocked by `state == 'open'` + in-prompt re-check.
-- **Non-owner comment** → blocked by `comment.user.login == repository_owner`.
-- **Unrelated issue** → blocked by title-prefix marker. Non-selection chatter → agent parses no valid numbers, opens zero PRs, reports "no valid selection."
-- **Ambiguous / no-match selection** ("5" with 3 rows, "all") → skip unresolved numbers and report; for "all", agent may map to all rows but must report its interpretation; never invent a topic.
-- **Topic already covered** → dup-PR guard + existing-file check skip it; no duplicate.
-- **Repeated comments racing** → `concurrency` group per issue serializes; `cancel-in-progress: false` queues; deterministic branch name + dup-guard prevent double PRs.
-- **Concurrency with the weekly recommender** → different groups, different artifacts (issue vs branch/PR), no conflict.
-- **Prompt injection via comment/issue body** → untrusted text passed via `env` (not interpolated into the prompt); prompt treats it as data; real safety net is `--allowedTools` (no merge) + least-privilege `permissions:`.
-- **issue_comment-from-default-branch gotcha** → documented in-file; `workflow_dispatch` covers pre-merge testing.
-- **No `GH_SCAN_TOKEN`** → preflight fails fast with an actionable error.
+- **Comment on a closed issue** → `state == 'open'` and the check again in the prompt block it.
+- **Non-owner comment** → `comment.user.login == repository_owner` blocks it.
+- **Unrelated issue** → the title-prefix marker blocks it. For a comment that is not a selection, the agent finds no valid numbers.
+  Then it opens zero PRs and reports "no valid selection."
+- **Ambiguous or no-match selection** ("5" with 3 rows, or "all") → skip the numbers that the agent cannot resolve and report them.
+  For "all", the agent can map to all rows, but it must report its interpretation. Never invent a topic.
+- **Topic already covered** → the dup-PR guard and the check for a current file skip it. No duplicate occurs.
+- **Repeated comments at the same time** → the `concurrency` group for each issue runs them one after the other. The setting `cancel-in-progress: false` puts them in a queue.
+  The deterministic branch name and the dup-guard prevent double PRs.
+- **Concurrency with the weekly recommender** → the two workflows use different groups and make different artifacts (an issue, or a branch and a PR). They do not conflict.
+- **Prompt injection through the comment or issue body** → the workflow gives untrusted text through `env` and does not put it into the prompt. The prompt treats it as data.
+  The real protection is `--allowedTools` (no merge) and least-privilege `permissions:`.
+- **The issue_comment-from-default-branch problem** → the file documents it. `workflow_dispatch` covers tests before the merge.
+- **No `GH_SCAN_TOKEN`** → the preflight fails immediately with an error that tells the user what to do.
 
-## Manual end-to-end verification recipe
+## Manual end-to-end verification procedure
 
-1. **Pre-merge (branch), dispatch path**: create a throwaway test issue titled `Cheatsheet recommendations — week of <today>` with a 2–3 row table in the recommender's shape. Run via `workflow_dispatch` with `issue_number=<that issue>`, `selection="1 and 3"`. Expect two `auto/generate/<slug>` branches and exactly two PRs, each with one new sheet + an `index.md` row, no private identifiers in PR text, no merge. (The `issue_comment` trigger won't fire from a branch — dispatch is the only pre-merge test.)
-2. **Edge checks via dispatch**: `selection="5"` (out of range) → zero PRs, reported unresolved. Run twice with the same selection → second opens no duplicate.
-3. **Post-merge (main), real comment path**: after merging both file changes to `main`, let the recommender open a real issue (or reuse a correctly-titled test one), then as the owner comment `1 and 3`. Confirm the workflow triggers, guards pass, same per-topic PRs appear. Confirm a non-owner comment (or a comment on a closed/renamed issue) does NOT trigger.
+1. **Before the merge (branch), dispatch path**: create a temporary test issue with the title `Cheatsheet recommendations — week of <today>`.
+   Give it a table of 2–3 rows in the same shape as the recommender table. Run it with `workflow_dispatch`, `issue_number=<that issue>`, and `selection="1 and 3"`.
+   Expect two `auto/generate/<slug>` branches and exactly two PRs. Each PR has one new sheet and one `index.md` row.
+   The PR text has no private identifiers, and no merge occurs. The `issue_comment` trigger does not run from a branch, so dispatch is the only test before the merge.
+2. **Edge checks with dispatch**: run with `selection="5"` (out of range). Expect zero PRs and a report of the number as not resolved.
+   Run two times with the same selection. Expect that the second run opens no duplicate.
+3. **After the merge (main), real comment path**: merge both file changes to `main`. Let the recommender open a real issue, or use a test issue with the correct title again.
+   Then, as the owner, comment `1 and 3`. Make sure that the workflow starts, the guards pass, and the same PRs for each topic appear.
+   Make sure that a comment from a different user does NOT start the workflow. A comment on a closed or renamed issue must also NOT start it.
 
 ---
 
 ## Critical files
 - `.github/workflows/cheatsheet-generate.yml` — **new**, the O-6 workflow
 - `.github/workflows/cheatsheet-recommend.yml` — **edit**, "Generate with" column → comment-to-generate
-- `specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/web-end-to-end-generate-from-selection.md` — **edit**, enrich `## Success criteria`
-- `.github/workflows/cheatsheet-refresh.yml` — reference (per-sheet branch/PR/restore/dup-guard pattern)
+- `specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/web-end-to-end-generate-from-selection.md` — **edit**, improve `## Success criteria`
+- `.github/workflows/cheatsheet-refresh.yml` — reference (for each sheet: branch/PR/restore/dup-guard pattern)
 - `.claude/skills/cheatsheet/SKILL.md` — reference (generation procedure, input shape, slug rule)

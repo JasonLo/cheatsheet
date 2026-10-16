@@ -1,10 +1,10 @@
 #!/bin/sh
-# cheatsheet uninstaller — removes the @import block from CLAUDE.md and deletes
-# the local clone. Mirrors install.sh.
+# cheatsheet uninstaller. This script removes the @import block from CLAUDE.md.
+# It also deletes the local clone. It is the reverse of install.sh.
 #
-#   ~/.cheatsheet/uninstall.sh
+#   ~/.cheatsheet/scripts/uninstall.sh
 #
-# Override locations with the same env vars as install.sh:
+# To change the locations, set the same env vars as for install.sh:
 #   CHEATSHEET_DIR  install location   (default: ~/.cheatsheet)
 #   CLAUDE_MD       target memory file (default: ~/.claude/CLAUDE.md)
 set -eu
@@ -16,7 +16,7 @@ END="<!-- cheatsheet:end -->"
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 
-# 1. Strip the managed block from CLAUDE.md, if present.
+# 1. If CLAUDE.md has the managed block, remove the block.
 if [ -f "$CLAUDE_MD" ] && grep -qF "$BEGIN" "$CLAUDE_MD"; then
   info "Removing cheatsheet block from $CLAUDE_MD"
   tmp="$(mktemp)"

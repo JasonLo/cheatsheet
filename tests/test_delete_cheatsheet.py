@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.14"
+# dependencies = ["pytest"]
+# ///
 import importlib.util
 from pathlib import Path
 
@@ -49,3 +53,9 @@ def test_unknown_name_errors_and_leaves_repo_unchanged(tmp_path, capsys):
     assert index_path.read_text() == before_index
     err = capsys.readouterr().err
     assert "does-not-exist" in err
+
+
+if __name__ == "__main__":
+    import pytest
+
+    raise SystemExit(pytest.main([__file__]))

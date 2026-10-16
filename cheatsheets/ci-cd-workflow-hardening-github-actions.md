@@ -1,11 +1,11 @@
 # CI/CD workflow hardening with github-actions
 
-_Grounded in JasonLo's repos as of 2026-08-31; current practice per docs.github.com/en/actions._
+_Grounded in JasonLo's repos as of 2026-08-31. Current practice is from docs.github.com/en/actions._
 
 ## Reference snippet
 
 ```yaml
-# Minimal hardened CI: validates PRs before merge, fails fast
+# Minimal hardened CI. It checks PRs before merge and stops at the first failure.
 name: CI
 
 on:
@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read          # never grant more than the job needs
+  contents: read          # Give only the permissions that the job needs
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -28,8 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -38,24 +38,28 @@ jobs:
 
 ## Typical usage patterns
 
-- **Minimal `permissions` block per workflow**: declare only what the job writes (e.g., `pages: write` + `id-token: write` for Pages deploy; `contents: read` for CI). Absent field defaults to repo setting — which is often broader than needed. (`JasonLo/jasonlo.dev:.github/workflows/ci.yml`, `JasonLo/jasonlo.dev:.github/workflows/publish.yml`)
+- **Minimal `permissions` block for each workflow.** Declare only the permissions that the job uses, for example `contents: read` for CI. A Pages deploy needs `pages: write` and `id-token: write`. (seen in `JasonLo/jasonlo.dev:.github/workflows/ci.yml`, `JasonLo/jasonlo.dev:.github/workflows/publish.yml`)
 
-- **`workflow_run` to chain privileged steps off an unprivileged job**: when a `push` by `GITHUB_TOKEN` doesn't re-trigger a push event (GitHub's anti-recursion rule), a downstream workflow listens on `workflow_run: workflows: [<name>]` and only deploys when `github.event.workflow_run.conclusion == 'success'` — separating untrusted CI code from secret-bearing deploy steps. (`JasonLo/jasonlo.dev:.github/workflows/publish.yml` chains off `sync-publications-fused.yml`)
+- **Start the deploy with `workflow_run`.** A push by `GITHUB_TOKEN` does not start other workflows, so the deploy workflow starts on `workflow_run`. It deploys only when `github.event.workflow_run.conclusion == 'success'`, and it runs separately from untrusted CI code. (seen in `JasonLo/jasonlo.dev:.github/workflows/publish.yml`)
 
-- **Dependabot for monthly action version bumps**: `package-ecosystem: github-actions` with `commit-message.prefix: "chore(ci)"` keeps action SHAs current without manual tracking. (`JasonLo/jasonlo.dev:.github/dependabot.yml`)
+- **Dependabot for monthly action updates.** Set `package-ecosystem: github-actions` with `commit-message.prefix: "chore(ci)"`. Dependabot then keeps the action SHAs current without manual work. (seen in `JasonLo/jasonlo.dev:.github/dependabot.yml`)
 
 ## Learnings
 
-- **One cancel-in-progress setting for all jobs** → **context-sensitive cancel: fast-cancel PRs, preserve deploys.** A cancelled deploy can leave infra half-provisioned; use `cancel-in-progress: ${{ github.event_name == 'pull_request' }}` for CI groups and `cancel-in-progress: false` for deploy/publish groups. (seen in `JasonLo/jasonlo.dev:.github/workflows/publish.yml` vs. older workflows without this split)
+- **One cancel setting for all jobs** → **Cancel old CI runs, never a deploy.** A cancelled deploy can leave infrastructure in a partial state. CI groups use `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`, and deploy groups use `cancel-in-progress: false`. (seen in `JasonLo/jasonlo.dev:.github/workflows/publish.yml`)
 
-- **Relying on the default 360-minute timeout** → **set explicit `timeout-minutes` per job.** A silent hang blocks runners for 6 hours and burns quota; an explicit limit fails fast and surfaces the problem. (seen in `simulation-based-inference/simulation-based-inference.github.io:.github/workflows/ci.yml` — no timeout — vs. JasonLo's newer workflows that always set it)
+- **The default job timeout is a safe limit** → **Each job declares its own time limit.** A job that stops responding can block a runner for 6 hours. A specified `timeout-minutes` makes the job fail quickly and shows the problem. (seen in `simulation-based-inference/simulation-based-inference.github.io:.github/workflows/ci.yml`, which has no timeout)
 
-- **`defaults: run: shell: bash` is optional boilerplate** → **it's load-bearing on cross-platform runners.** Without it, shell selection falls to the runner OS default, making `[[ ]]` and `set -euo pipefail` silently behave differently on Windows. Always set it explicitly. (seen in `JasonLo/jasonlo.dev:.github/workflows/ci.yml`)
+- **`defaults: run: shell: bash` is optional** → **Each job sets its shell.** Without this setting, the runner OS selects the shell. Then `[[ ]]` and `set -euo pipefail` behave differently on Windows and show no error. (seen in `JasonLo/jasonlo.dev:.github/workflows/ci.yml`)
 
 ## Agent rules
 
-- ALWAYS declare a `permissions` block on every workflow; never rely on the repository default.
-- ALWAYS set `timeout-minutes` on every job; never let the 360-minute default silently burn quota.
-- ALWAYS use context-sensitive `cancel-in-progress`: true (or conditional) for CI jobs, false for deploy jobs.
-- ALWAYS add `defaults: run: shell: bash` for consistent shell behavior across runners.
-- NEVER trigger a write-privileged deploy step from the same job that runs untrusted PR code — chain via `workflow_run` instead.
+- ALWAYS declare a `permissions` block on every workflow.
+- NEVER use the repository default permissions.
+- ALWAYS set `timeout-minutes` on every job.
+- NEVER let a job use the 360-minute default timeout.
+- ALWAYS set `cancel-in-progress` to true or to a condition for CI jobs.
+- ALWAYS set `cancel-in-progress: false` for deploy jobs.
+- ALWAYS add `defaults: run: shell: bash` to get the same shell behavior on all runners.
+- NEVER trigger a write-privileged deploy step from the job that runs untrusted PR code.
+- ALWAYS use `workflow_run` to start a privileged deploy after the CI workflow.

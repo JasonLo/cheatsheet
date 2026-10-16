@@ -2,13 +2,14 @@
 # requires-python = ">=3.14"
 # dependencies = []
 # ///
-"""Delete a cheatsheet by name and regenerate the root index.md (Intent I-3 O-1/O-2).
+"""Delete a cheatsheet by name and make the root index.md again (Intent I-3 O-1, O-2).
 
-Deterministic and side-effect-bounded: removes cheatsheets/<name>.md, then rewrites
-index.md by reusing register_cheatsheet.py's discover/render logic (single source of
-truth for the index format, Constitution P-4). Unknown name → no mutation, non-zero exit.
+The script is deterministic. It removes cheatsheets/<name>.md. Then it writes index.md
+with the discover and render functions of register_cheatsheet.py (Constitution P-4).
+As a result, the index format has one source. If the name is unknown, the script changes
+nothing and exits with a non-zero code.
 
-Run via: uv run scripts/delete_cheatsheet.py <name>
+Run it with: uv run scripts/delete_cheatsheet.py <name>
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ _REG = Path(__file__).resolve().parent / "register_cheatsheet.py"
 
 
 def _load_register():
-    """Import register_cheatsheet.py as a sibling module (its main() is __main__-guarded)."""
+    """Import register_cheatsheet.py from the same folder. Its main() runs only as __main__."""
     spec = importlib.util.spec_from_file_location("register_cheatsheet", _REG)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -29,15 +30,15 @@ def _load_register():
 
 
 def normalize_name(name: str) -> str:
-    """Accept a bare slug, a trailing .md, or a leading cheatsheets/ — return the slug."""
+    """Return the slug from a name. The name can end in .md or start with cheatsheets/."""
     name = name.strip().removeprefix("cheatsheets/").removesuffix(".md")
     return name
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Delete a cheatsheet and regenerate index.md.")
-    parser.add_argument("name", help="Cheatsheet name (slug), e.g. http-client-httpx.")
-    parser.add_argument("--root", default=".", help="Repo root (default: current directory).")
+    parser = argparse.ArgumentParser(description="Delete a cheatsheet and make index.md again.")
+    parser.add_argument("name", help="Cheatsheet name (slug), for example http-client-httpx.")
+    parser.add_argument("--root", default=".", help="Repo root. The default is the current directory.")
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()

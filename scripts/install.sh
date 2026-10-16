@@ -1,11 +1,11 @@
 #!/bin/sh
-# cheatsheet installer — clones this repo locally and imports its index into
-# your user-level ~/.claude/CLAUDE.md so coding agents always know which
-# cheatsheets exist. Re-run any time to pull the latest sheets.
+# cheatsheet installer. This script clones this repo locally. It imports the
+# index into your user-level ~/.claude/CLAUDE.md. Then coding agents know the
+# cheatsheets. To get the latest cheatsheets, run the script again.
 #
 #   curl -fsSL https://raw.githubusercontent.com/JasonLo/cheatsheet/main/scripts/install.sh | sh
 #
-# Override locations with env vars:
+# To change the locations, set these env vars:
 #   CHEATSHEET_DIR  install location   (default: ~/.cheatsheet)
 #   CLAUDE_MD       target memory file (default: ~/.claude/CLAUDE.md)
 set -eu
@@ -22,7 +22,7 @@ err()  { printf '\033[1;31merror:\033[0m %s\n' "$1" >&2; exit 1; }
 
 command -v git >/dev/null 2>&1 || err "git is required but was not found on PATH."
 
-# 1. Clone the cheatsheet repo, or fast-forward it if already present.
+# 1. Clone the cheatsheet repo. If the clone exists, fast-forward it.
 if [ -d "$INSTALL_DIR/.git" ]; then
   info "Updating existing cheatsheet in $INSTALL_DIR"
   git -C "$INSTALL_DIR" pull --ff-only --quiet
@@ -33,7 +33,7 @@ fi
 
 [ -f "$INDEX_PATH" ] || err "index.md not found at $INDEX_PATH after install."
 
-# 2. Add or refresh the @import block in CLAUDE.md (idempotent via markers).
+# 2. Add or update the @import block in CLAUDE.md. The markers make this step idempotent.
 mkdir -p "$(dirname "$CLAUDE_MD")"
 touch "$CLAUDE_MD"
 
@@ -42,7 +42,7 @@ block="$BEGIN
 
 @$INDEX_PATH
 
-When the index lists a cheatsheet relevant to the task, read that sheet before acting.
+If the index lists a cheatsheet that is related to the task, read that cheatsheet before you act.
 $END"
 
 if grep -qF "$BEGIN" "$CLAUDE_MD"; then

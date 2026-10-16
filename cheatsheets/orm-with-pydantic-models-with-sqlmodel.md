@@ -1,6 +1,6 @@
 # ORM with Pydantic models with sqlmodel
 
-_Grounded in JasonLo's repos as of 2026-08-31; current practice per SQLModel docs (v0.0.24+) and SQLAlchemy 2.x._
+_Grounded in JasonLo's repos as of 2026-08-31. Current practice is from SQLModel docs (v0.0.24+) and SQLAlchemy 2.x._
 
 ## Reference snippet
 
@@ -35,24 +35,25 @@ with Session(engine) as session:
 
 ## Typical usage patterns
 
-- **Table model with validation constraints** — inherit from `SQLModel, table=True` to get both Pydantic validation and a DB-backed table; use `Field(min_length=1)`, `Field(index=True, unique=True)` to push constraints into both the schema and the DB schema simultaneously. One class definition covers data validation, serialization, and the ORM layer. (seen in `UW-Madison-DSI/pelican-data-loader:pelican_data_loader/db.py`)
+- A class that inherits from `SQLModel, table=True` gives Pydantic validation, serialization, and a database table in one definition. Constraints, for example `Field(min_length=1)` and `Field(index=True, unique=True)`, go into the validation and into the DB schema. (seen in `UW-Madison-DSI/pelican-data-loader:pelican_data_loader/db.py`)
 
-- **Many-to-many via an explicit link model** — define a `SQLModel, table=True` link class with both foreign keys as primary keys (`primary_key=True`), then reference it from each side via `Relationship(back_populates=…, link_model=LinkClass)`. The composite PK prevents duplicate links; no extra `unique_constraint` needed. (seen in `UW-Madison-DSI/pelican-data-loader:pelican_data_loader/db.py`)
+- For many-to-many, define a `SQLModel, table=True` link class with both foreign keys as `primary_key=True`. Reference it from each side with `Relationship(back_populates=…, link_model=LinkClass)`, and the composite key blocks duplicate links without a `unique_constraint`. (seen in `UW-Madison-DSI/pelican-data-loader:pelican_data_loader/db.py`)
 
-- **Session-per-request with a pooled engine** — create one `create_engine(url, pool_pre_ping=True, pool_size=5)` at startup, then get a fresh `Session(engine)` per request (context manager or `get_session()`). Never share a single `Session` across requests: one failed transaction poisons all later queries in that session. (seen in `UW-Madison-DSI/pelican-data-loader:app/db.py`)
+- Create one pooled engine at startup with `create_engine(url, pool_pre_ping=True, pool_size=5)`. Each request then opens a new `Session(engine)` through a context manager or `get_session()`. (seen in `UW-Madison-DSI/pelican-data-loader:app/db.py`)
 
 ## Learnings
 
-- **Shared `Session` across reruns/requests causes transaction poisoning** → **give each request its own `Session`**. A single cached `Session` object holds transaction state; one failed query rolls back the whole session and every subsequent call fails with `InvalidRequestError`. The SQLModel-recommended pattern is `with Session(engine) as session:` scoped to a single unit of work. (seen in `UW-Madison-DSI/pelican-data-loader:app/db.py`)
+- **One shared `Session` can serve all reruns and requests** → **Each unit of work gets its own `Session`.** A `Session` holds transaction state. After one failed query, every later call fails with `InvalidRequestError`, and `with Session(engine) as session:` for each unit of work prevents this. (seen in `UW-Madison-DSI/pelican-data-loader:app/db.py`)
 
-- **`expire_on_commit=True` (default) makes post-commit attribute access fire a new query** → **use `expire_on_commit=False` when reading attributes after commit**. After `session.commit()` every loaded instance is "expired" — the ORM re-fetches on next attribute access. When the session is already closed or the object is detached (e.g. after a `delete` operation), this raises `DetachedInstanceError`. Set `expire_on_commit=False` in the `sessionmaker` to keep the in-memory state valid. (seen in `UW-Madison-DSI/pelican-data-loader:app/db.py`)
+- **Objects stay usable after `session.commit()`** → **A commit expires every loaded object by default.** With `expire_on_commit=True`, the next attribute access runs a new query. A detached object then raises `DetachedInstanceError`, for example after a `delete`, and `expire_on_commit=False` in the `sessionmaker` prevents this. (seen in `UW-Madison-DSI/pelican-data-loader:app/db.py`)
 
-- **Passing `session` into constructors that call the DB prevents duplicate rows** → **thread the active session through helper functions that need to query**. If a helper like `parse_creators` opens its own `Session`, its inserts are invisible to the caller's transaction and unique-constraint violations occur on re-runs. Pass the outer session as a parameter so all reads and writes are in one transaction. (seen in `UW-Madison-DSI/pelican-data-loader:pelican_data_loader/db.py`)
+- **A helper can open its own `Session`** → **One operation uses one transaction.** A separate `Session` hides its inserts from the caller. Reruns of a helper, for example `parse_creators`, then violate unique constraints, and an outer `session` parameter prevents this. (seen in `UW-Madison-DSI/pelican-data-loader:pelican_data_loader/db.py`)
 
 ## Agent rules
 
-- ALWAYS create a new `Session` per request or unit of work; NEVER share a single `Session` instance across multiple requests or Streamlit reruns.
-- ALWAYS use `expire_on_commit=False` in `sessionmaker` when reading model attributes after `session.commit()` without reopening the session.
-- ALWAYS pass the active `Session` into helper functions that perform DB queries, so they share the caller's transaction.
-- NEVER define a link table without composite `primary_key=True` on both foreign keys — missing it allows duplicate many-to-many associations.
-- ALWAYS use `pool_pre_ping=True` on long-lived engines that connect to a database that may restart.
+- ALWAYS create a new `Session` for each request or unit of work.
+- NEVER share one `Session` instance across requests or Streamlit reruns.
+- ALWAYS set `expire_on_commit=False` in `sessionmaker` when you read model attributes after `session.commit()` without a new session.
+- ALWAYS pass the active `Session` into helper functions that query the DB.
+- NEVER define a link table without composite `primary_key=True` on both foreign keys.
+- ALWAYS use `pool_pre_ping=True` on long-lived engines for a database that can restart.

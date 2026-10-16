@@ -1,17 +1,18 @@
 name: "Cheatsheet weekly recommender"
 
-# Scans the user's past-7-day GitHub activity, finds newly-adopted frameworks
-# not yet covered, and opens ONE issue with a top-3 table asking which to add (I-2).
+# This workflow scans the GitHub activity of the user for the last 7 days (I-2).
+# It finds new frameworks that the user started to use and that have no cheatsheet.
+# Then it opens ONE issue with a top-3 table and asks which topics to add.
 
 on:
   schedule:
-    - cron: "17 4 * * 1"   # 04:17 UTC every Monday
-  workflow_dispatch: {}     # always allow manual runs for testing
+    - cron: "17 4 * * 1"   # 04:17 UTC each Monday
+  workflow_dispatch: {}     # always let a person start a manual run for tests
 
 permissions:                # least privilege: this job only opens an issue
-  contents: read            # read the checked-out repo (existing cheatsheets/index)
+  contents: read            # read the checked-out repo (existing cheatsheets and index)
   issues: write
-  id-token: write           # OIDC — required by claude-code-action
+  id-token: write           # OIDC. claude-code-action requires it.
 
 concurrency:
   group: "cheatsheet-recommend"
@@ -20,63 +21,71 @@ concurrency:
 jobs:
   recommend:
     runs-on: ubuntu-latest
-    timeout-minutes: 30       # bound the run (tunable)
+    timeout-minutes: 30       # Maximum run time. You can change this value.
     env:
-      GH_TOKEN: ${{ github.token }}                  # issue writes target THIS repo
-      GH_SCAN_TOKEN: ${{ secrets.GH_SCAN_TOKEN }}    # read-only PAT for cross-repo activity scan
+      GH_TOKEN: ${{ github.token }}                  # issue writes go to THIS repo
+      GH_SCAN_TOKEN: ${{ secrets.GH_SCAN_TOKEN }}    # read-only PAT for the cross-repo activity scan
     steps:
-      - name: Preflight — require the read-only scan token
+      - name: Preflight - require the read-only scan token
         run: |
           if [ -z "${GH_SCAN_TOKEN}" ]; then
             echo "::error::GH_SCAN_TOKEN secret is not set. Add a read-only fine-grained PAT (contents+metadata, all repos) named GH_SCAN_TOKEN."
             exit 1
           fi
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6 — bump the SHA deliberately
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6. Change the SHA only intentionally.
 
-      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1 — bump the SHA deliberately
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8. Change the SHA only intentionally.
+        # The agent reads other repos with `uv run scripts/gh_scan.py`, so it needs uv on PATH.
+
+      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1. Change the SHA only intentionally.
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           claude_args: |
             --max-turns 60
-            --allowedTools "Read,Glob,Grep,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue list:*),Bash(gh issue create:*)"
+            --allowedTools "Read,Glob,Grep,WebSearch,WebFetch,Bash(date:*),Bash(uv run scripts/gh_scan.py:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue list:*),Bash(gh issue create:*)"
           prompt: |
-            You are the weekly gap-recommender for this cheatsheet repo (intent I-2).
+            You are the weekly agent that recommends missing cheatsheets for this repo (intent I-2).
 
             ## Orientation (read first)
             - Read `CLAUDE.md`, `specs/CONSTITUTION.md`, and `.claude/skills/cheatsheet/SKILL.md`.
-            - List what already exists: every `cheatsheets/*.md` and `index.md` — these define
-              what is ALREADY covered.
-            - Resolve the login: `gh api user --jq .login`. Compute the window:
-              `date -u -d '7 days ago' +%Y-%m-%d` (start) and `date -u +%Y-%m-%d` (today).
+            - List the sheets that exist: every `cheatsheets/*.md` file and `index.md`.
+              These files show the topics that a cheatsheet ALREADY covers.
+            - Get the login: `uv run scripts/gh_scan.py api user --jq .login`. The default token cannot read `/user`.
+            - Calculate the time window. The start is `date -u -d '7 days ago' +%Y-%m-%d`. Today is `date -u +%Y-%m-%d`.
 
             ## Two-token rule (NON-NEGOTIABLE security boundary)
-            - CROSS-REPO READS: ALWAYS prefix with the read-only token, e.g.
-              `GH_TOKEN=$GH_SCAN_TOKEN gh search commits --author <login> --committer-date '>=<start>' --json repository,sha,commit`.
-            - THE ISSUE WRITE (`gh issue list`/`gh issue create`) in THIS repo: plain `gh` (default token).
-            - NEVER read other repos with the default token; NEVER write with the scan token.
-            - You have NO write access to repo contents and CANNOT open PRs — your only output is one issue.
+            - For CROSS-REPO READS, ALWAYS put the read-only token first. For example:
+              `uv run scripts/gh_scan.py search commits --author <login> --committer-date '>=<start>' --json repository,sha,commit`.
+            - For THE ISSUE WRITE (`gh issue list`/`gh issue create`) in THIS repo, use plain `gh` (default token).
+            - NEVER read other repos with the default token.
+            - NEVER write with the scan token.
+            - You have NO write access to the repo contents. You CANNOT open PRs.
+            - Your only output is one issue.
 
-            ## Privacy (Constitution P-7) — applies to the entire issue (title + body)
-            - Resolve each touched repo's visibility before citing it.
-            - NEVER name/slug/URL a PRIVATE repo or quote its code in the issue; generalize.
-              Public repos may be cited as evidence.
+            ## Privacy (Constitution P-7). This applies to the full issue (title and body).
+            - Before you cite a repo, get its visibility: `uv run scripts/gh_scan.py repo view <owner>/<repo> --json visibility -q .visibility`.
+            - NEVER give the name, slug, or URL of a PRIVATE repo in the issue.
+            - NEVER quote code from a PRIVATE repo in the issue. Make private evidence general.
+            - You can cite public repos as evidence.
 
-            ## Task — recommend the top 3 gaps in ONE issue, ask the user to choose
-            1. From the past-7-day commits/activity, infer the libraries, frameworks, and tools the
-               user newly adopted or worked heavily in this week.
-            2. Keep only topics that are (a) genuinely cheatsheet-worthy and (b) NOT already a
-               `cheatsheets/*.md`. RANK them by value and take AT MOST the TOP 3. Drop the rest.
-            3. Dedup: `gh issue list --state open --search "Cheatsheet recommendations"`. If an open
-               recommendations issue already lists the same top topics, SKIP (do not open a duplicate).
-            4. If at least one topic qualifies, open exactly ONE issue with `gh issue create`:
+            ## Task: recommend the top 3 missing topics in ONE issue, and ask the user to select
+            1. Examine the commits and activity of the last 7 days.
+               Find the libraries, frameworks, and tools that the user started to use or used frequently this week.
+            2. Keep only the topics that satisfy both conditions:
+               (a) The topic has sufficient value for a cheatsheet.
+               (b) The topic is NOT already a `cheatsheets/*.md` file.
+               RANK the topics by value. Keep the TOP 3 or fewer. Remove the other topics.
+            3. Look for duplicates: `gh issue list --state open --search "Cheatsheet recommendations"`.
+               If an open recommendations issue already shows the same top topics, SKIP. Do not open a duplicate.
+            4. If one or more topics qualify, open exactly ONE issue with `gh issue create`:
                - Title: `Cheatsheet recommendations — week of <YYYY-MM-DD>`
-               - Body: a short intro, then a markdown table, then a one-line ask. Use this shape:
+               - Body: a short introduction, then a markdown table, then a one-line request. Use this shape:
 
                  ```markdown
-                 Based on your GitHub activity from <start> to <today>, here are the top cheatsheet
-                 candidates not yet covered. Comment with the number(s) you want me to add.
+                 These are the top cheatsheet candidates from your GitHub activity from <start> to <today>.
+                 No cheatsheet covers them now. Write a comment with the numbers that you want me to add.
 
                  | # | Topic (use case) | Target | Why now (your recent activity) | Evidence |
                  |---|---|---|---|---|
@@ -84,12 +93,15 @@ jobs:
                  | 2 | ... | ... | ... | ... |
                  | 3 | ... | ... | ... | ... |
 
-                 Reply on THIS open issue (as the repo owner) with the numbers to add — e.g. "1 and 3".
-                 Your comment triggers the generate workflow, which opens one PR per chosen sheet; no
-                 local command needed.
+                 Reply on THIS open issue as the repo owner. Give the numbers to add, for example "1 and 3".
+                 Your comment starts the generate workflow. The workflow opens one PR with all sheets that you select.
+                 You do not need a local command.
                  ```
 
             ## Finish
-            - If no topic qualifies (or a duplicate issue already exists), open NO issue and print
-              "no new cheatsheet topics this week".
-            - Report: window scanned, topics considered, and the issue number opened (or none).
+            - If no topic qualifies, open NO issue and print "no new cheatsheet topics this week".
+            - If a duplicate issue already exists, open NO issue and print "no new cheatsheet topics this week".
+            - Report these items:
+              - the time window that you scanned
+              - the topics that you examined
+              - the number of the issue that you opened, or "none"

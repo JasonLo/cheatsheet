@@ -1,19 +1,19 @@
 # Outbound HTTP clients with httpx
 
-_Grounded in JasonLo's repos as of 2026-06-05; current practice per encode/httpx official docs (context7 `/encode/httpx`)._
+_Grounded in JasonLo's repos as of 2026-06-05. Current practice is from encode/httpx official docs (context7 `/encode/httpx`)._
 
 ## Reference snippet
 
 ```python
 import httpx
 
-# Sync — reuse one Client (connection pool + shared config), close via context manager.
+# Sync. Use one Client again to share the connection pool and config. The context manager closes it.
 with httpx.Client(base_url="https://api.example.com", timeout=10.0) as client:
     r = client.get("/users", params={"limit": 50})
     r.raise_for_status()
     data = r.json()
 
-# Async — same lifecycle, awaited.
+# Async. The lifecycle is the same, with await.
 async def fetch() -> dict:
     async with httpx.AsyncClient(base_url="https://api.example.com", timeout=10.0) as client:
         r = await client.get("/users")
@@ -23,24 +23,25 @@ async def fetch() -> dict:
 
 ## Typical usage patterns
 
-- Reusable fetch helper takes an injected `httpx.Client` and wraps it in tenacity retry (`retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException))`), then `raise_for_status()` → `.json()` — for flaky upstream JSON APIs (`JasonLo/best-in-slot:slots/python-web/httpx/example/httpx_example/client.py`).
-- Per-call `httpx.Client(timeout=...)` opened inside a `with` for a single request, with a configurable timeout env var — correct lifecycle but a fresh client per call; for slow generation endpoints a large timeout is set deliberately.
-- `httpx.get(..., follow_redirects=True)` for endpoints that 30x to the real resource.
+- **Retry helper with an injected client.** A fetch helper takes an `httpx.Client` and wraps it in a tenacity retry (`retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException))`). Then it calls `raise_for_status()` and `.json()` for upstream JSON APIs that fail at random (`JasonLo/best-in-slot:slots/python-web/httpx/example/httpx_example/client.py`).
+- **One client in a `with` block for one request.** The code opens `httpx.Client(timeout=...)` for a single call and reads the timeout from an environment variable. Slow generation endpoints get a large timeout.
+- **Redirects only on request.** The code calls `httpx.get(..., follow_redirects=True)` for endpoints that send a 30x response to the real resource.
 
 ## Learnings
 
-- **Reach for module-level `httpx.get`/`httpx.post` per request** → **reuse one `Client`/`AsyncClient` across requests.** The request-level API opens and tears down a fresh connection (and TLS handshake) every call; a shared client keeps a connection pool and shared headers/base_url, which is the real win for repeated outbound calls.
-- **Treat a `Client` as a fire-and-forget object** → **a `Client` owns a connection pool that must be released.** Use it as a context manager (or `close()`/`aclose()`); a long-lived client that is never closed leaks connections — especially an async client whose lifecycle should bind to the app (FastAPI lifespan), not a request.
-- **Rely on the implicit default timeout** → **set the timeout explicitly per client/use case.** httpx defaults to 5s, but `timeout=None` disables it entirely; leaving it implicit means a hung upstream can stall the caller. Pick a value that fits the endpoint (short for APIs, long for generation), don't inherit it by accident.
+- **Each request is an independent call** → **Requests to the same host share one client**. The module-level `httpx.get` and `httpx.post` open a new connection and TLS handshake for each call. A shared `Client` keeps a connection pool and the shared headers and `base_url`.
+- **A client is a simple object that needs no cleanup** → **A client owns a connection pool that you must release**. Release it with a context manager or with a call to `close()` or `aclose()`. Bind a long-lived `AsyncClient` to the application lifespan, not to one request.
+- **The default timeout is enough** → **The timeout is a decision for each use case**. If you do not set it, an upstream server that stops responding can stop the caller. Use a short value for APIs and a long value for generation endpoints.
 
 ## Agent rules
 
-- ALWAYS reuse a single `httpx.Client` / `httpx.AsyncClient` across multiple requests instead of module-level `httpx.get`/`httpx.post`.
-- ALWAYS manage a client's lifecycle: use it as a context manager, or pair construction with `close()`/`aclose()`.
-- ALWAYS bind an `AsyncClient`'s lifecycle to the application (e.g. FastAPI lifespan/startup-shutdown), not to a single request.
-- ALWAYS pass an explicit `timeout=` to the client or call; never leave it implicit for production calls.
-- ALWAYS call `response.raise_for_status()` before reading `.json()`/`.content`.
-- ALWAYS retry only transient errors (`httpx.TimeoutException`, transport `httpx.HTTPError`) with backoff; handle `httpx.HTTPStatusError` separately.
-- ALWAYS set `follow_redirects=True` explicitly when an endpoint redirects.
-- NEVER create a new `Client` per request when the calls share a host/config.
-- NEVER set `timeout=None` (disables all timeouts) unless a single specific call genuinely needs unbounded waiting.
+- ALWAYS reuse one `httpx.Client` or `httpx.AsyncClient` across many requests, not module-level `httpx.get`/`httpx.post`.
+- ALWAYS release a client with a context manager or with a call to `close()`/`aclose()`.
+- ALWAYS bind the lifecycle of an `AsyncClient` to the application, for example the FastAPI lifespan.
+- ALWAYS pass a specified `timeout=` to the client or call for production calls.
+- ALWAYS call `response.raise_for_status()` before you read `.json()` or `.content`.
+- ALWAYS retry only transient errors, for example `httpx.TimeoutException` and transport `httpx.HTTPError`, with backoff.
+- ALWAYS handle `httpx.HTTPStatusError` separately from transient errors.
+- ALWAYS set `follow_redirects=True` when an endpoint sends a redirect.
+- NEVER create a new `Client` for each request when the calls share a host and configuration.
+- NEVER set `timeout=None` unless one specific call must wait with no limit.

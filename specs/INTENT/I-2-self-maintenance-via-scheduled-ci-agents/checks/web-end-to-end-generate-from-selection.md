@@ -1,17 +1,49 @@
-# Agent check: selecting topic(s) by issue comment (recommendations OR monthly-refresh issue) generates/regenerates the chosen sheets and opens ONE bundled PR carrying `Closes #N` — closing the loop entirely in the GitHub web UI
+# Agent check: An owner comment on an issue makes the selected cheatsheets and opens one pull request.
 
 ## SHALL
-**WHEN** the repository owner comments a topic selection (e.g. "1 and 3") on an open cheatsheet recommendations issue or monthly-refresh issue **THE SYSTEM SHALL** generate (for a recommendations issue) or regenerate (for a refresh issue) every selected cheatsheet via the I-1 skill and open exactly one human-reviewed pull request for that run — bundling all selected sheets and their `index.md` update into the single PR — requiring no local execution, so both the recommend → select → generate → review loop and the refresh → select → regenerate → review loop complete entirely within the GitHub web interface. [test: agent:specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/web-end-to-end-generate-from-selection.md]
+
+**WHEN** the owner comments a selection on an open recommendations or refresh issue **THE SYSTEM SHALL** open exactly one pull request for the run. An example of a selection is "1 and 3". For a recommendations issue, the workflow makes each selected cheatsheet with the I-1 skill. For a refresh issue, the workflow makes each selected cheatsheet again. The pull request contains all selected cheatsheets and the `index.md` update. A person reviews the pull request. The loop needs no local step. The user can do the recommend → select → generate → review loop in the GitHub web interface. The same applies to the refresh → select → regenerate → review loop. [test: agent:specs/INTENT/I-2-self-maintenance-via-scheduled-ci-agents/checks/web-end-to-end-generate-from-selection.md]
 
 ## Success criteria
-Inspect `.github/workflows/cheatsheet-generate.yml` (and the companion `.github/workflows/cheatsheet-recommend.yml` and `.github/workflows/cheatsheet-refresh.yml`) and cite file:line evidence for each. PASS requires all of them; FAIL if any is missing or contradicted.
 
-- **Trigger + guard, both issue kinds.** `on: issue_comment: types: [created]` is present and paired with `workflow_dispatch`. The job `if:` restricts the comment path to ALL of: (a) the repository owner (`github.event.comment.user.login == github.repository_owner`), (b) an OPEN issue (`github.event.issue.state == 'open'`), (c) a cheatsheet issue — a title-prefix match on EITHER `Cheatsheet recommendations` OR `Cheatsheet refresh` (both must be accepted), and (d) not a PR comment (`github.event.issue.pull_request == null`). The `workflow_dispatch` path accepts an issue number + selection so the loop is testable without a live comment.
-- **Mode resolution from the issue title.** The prompt resolves a MODE from the title: a `Cheatsheet recommendations …` issue ⇒ **generate mode** (selected rows are NEW sheets); a `Cheatsheet refresh …` issue ⇒ **refresh mode** (selected rows are EXISTING sheets to regenerate). Both issue kinds expose column 2 = use case and column 3 = backtick-wrapped target.
-- **Selection → inputs mapping.** The prompt instructs the agent to read the issue body via `gh issue view`, parse the markdown table, map each selected number to its (use case, target) row, skip numbers with no matching row, and never invent a topic. Untrusted selection text is passed via `env` (`SELECTION_COMMENT`/`DISPATCH_SELECTION`/`ISSUE_NUMBER`), not interpolated into the prompt string.
-- **Generation via the I-1 skill.** The prompt directs the agent to follow `.claude/skills/cheatsheet/SKILL.md` to author `cheatsheets/<slug>.md` and to run `uv run scripts/register_cheatsheet.py` to regenerate `index.md` (always staged in generate mode; in refresh mode only when the title changed).
-- **ONE human-reviewed PR for the whole run, no auto-merge — per mode.** A single run branch (generate mode `auto/generate/from-issue-<N>`, refresh mode `auto/refresh/from-issue-<N>`) accumulates EVERY selected sheet — no per-topic branch switching or `git restore` between topics — `register_cheatsheet.py` runs once after all sheets are written, a run-level dup-PR guard via `gh pr list --head <branch>` (skip if a PR already targets the run branch), and exactly one `gh pr create` with a per-mode title (`feat(cheatsheet): add selected sheets from #<N>` vs `chore(cheatsheet): refresh selected sheets from #<N>`). Generate mode SKIPS a slug whose sheet already exists; refresh mode SKIPS a slug whose sheet does NOT exist (never creates a new sheet). The PR body ends with exactly `Closes #<N>` so merging it auto-closes the originating issue (O-7). `--allowedTools` includes `gh pr create` + `git push` but EXCLUDES any `gh pr merge`, `gh pr review`, or wildcard `gh pr:*`. `permissions:` grants `contents: write`, `pull-requests: write`, `id-token: write`, and `issues: write` (the last only to post the 👀 ack reaction on the triggering comment).
-- **Hardening.** Both third-party actions (`actions/checkout`, `anthropics/claude-code-action`) are SHA-pinned (no floating `@vN`); a `concurrency` group and `timeout-minutes` are set.
-- **Two-token rule (O-3).** Cross-repo reads are prefixed with `GH_TOKEN=$GH_SCAN_TOKEN`; in-repo writes and the issue read use the default `github.token`; the `GH_SCAN_TOKEN` preflight step is present.
-- **Privacy (P-7).** The prompt forbids a private repo's name/slug/URL or verbatim content in any committed file or PR text and requires generalization; public repos may be cited.
-- **Web-only loop, both producers.** Neither the `cheatsheet-recommend.yml` issue nor the `cheatsheet-refresh.yml` issue instructs a local `/cheatsheet` command — the only call to action in each is to comment the number(s) on the issue (which triggers this workflow), so both loops complete entirely in the web UI with no local step.
+- Inspect `.github/workflows/cheatsheet-generate.yml`. Also inspect `.github/workflows/cheatsheet-recommend.yml` and `.github/workflows/cheatsheet-refresh.yml`.
+- Cite file:line evidence for each condition below.
+- PASS only if all conditions are true. FAIL if one condition is missing or if the evidence contradicts it.
+- **Trigger and guard for the two issue types.** The workflow has `on: issue_comment: types: [created]` and `workflow_dispatch`.
+  - The job `if:` accepts a comment only from the repo owner (`github.event.comment.user.login == github.repository_owner`).
+  - The job `if:` accepts a comment only on an open issue (`github.event.issue.state == 'open'`).
+  - The job `if:` accepts a title that starts with `Cheatsheet recommendations` or `Cheatsheet refresh`. It must accept the two prefixes.
+  - The job `if:` rejects a comment on a pull request (`github.event.issue.pull_request == null`).
+  - The `workflow_dispatch` path accepts an issue number and a selection. Then a person can test the loop with no live comment.
+- **Mode from the issue title.** A `Cheatsheet recommendations …` title sets **generate mode**. In this mode, the selected rows are new sheets.
+  - A `Cheatsheet refresh …` title sets **refresh mode**. In this mode, the selected rows are current sheets to make again.
+  - In the two issue types, column 2 is the use case and column 3 is the target in backticks.
+- **Map the selection to inputs.** The prompt tells the agent to read the issue body with `gh issue view` and parse the markdown table.
+  - The agent maps each selected number to its row of use case and target.
+  - The agent skips a number with no row. It never invents a topic.
+  - The workflow passes the selection text through `env` (`SELECTION_COMMENT`, `DISPATCH_SELECTION`, `ISSUE_NUMBER`). It does not put this text directly in the prompt string.
+- **Generation with the I-1 skill.** The prompt tells the agent to follow `.claude/skills/cheatsheet/SKILL.md` to write `cheatsheets/<slug>.md`.
+  - The agent runs `uv run scripts/register_cheatsheet.py` to update `index.md`.
+  - In generate mode, the agent always stages `index.md`. In refresh mode, it stages `index.md` only when the title changed.
+- **One pull request for the run, with no automatic merge.** One run branch holds all selected sheets.
+  - The branch is `auto/generate/from-issue-<N>` in generate mode and `auto/refresh/from-issue-<N>` in refresh mode.
+  - The agent does not change branches or run `git restore` between topics.
+  - The agent runs `register_cheatsheet.py` one time, after it writes all sheets.
+  - A guard runs `gh pr list --head <branch>` and stops if a pull request for the run branch exists.
+  - The agent runs `gh pr create` exactly one time.
+  - The title is `feat(cheatsheet): add selected sheets from #<N>` in generate mode. It is `chore(cheatsheet): refresh selected sheets from #<N>` in refresh mode.
+  - Generate mode skips a slug that has a sheet. Refresh mode skips a slug that has no sheet, and it never makes a new sheet.
+  - The last line of the pull request body is exactly `Closes #<N>`. Then the merge closes the source issue (O-7).
+  - `--allowedTools` includes `gh pr create` and `git push`. It does not include `gh pr merge`, `gh pr review`, or a wildcard `gh pr:*`.
+  - `permissions:` gives `contents: write`, `pull-requests: write`, `id-token: write`, and `issues: write`.
+  - The workflow uses `issues: write` only to add the 👀 reaction to the comment that started the run.
+- **Hardening.** The workflow pins `actions/checkout` and `anthropics/claude-code-action` to a full commit SHA, not to a tag such as `@vN`.
+  - The workflow sets a `concurrency` group and `timeout-minutes`.
+- **Two-token rule (O-3).** The prompt runs each cross-repo read through `uv run scripts/gh_scan.py`, which uses `GH_SCAN_TOKEN`.
+  - Writes to this repo and the issue read use the default `github.token`.
+  - A preflight step checks `GH_SCAN_TOKEN`.
+- **Privacy (P-7).** The prompt does not allow the name, slug, URL, or text of a private repo in a committed file or in pull request text.
+  - The prompt requires a general form for private patterns. It permits cites of public repos.
+- **Web-only loop for the two issue sources.** The issues from `cheatsheet-recommend.yml` and from `cheatsheet-refresh.yml` do not tell the user to run a local `/cheatsheet` command.
+  - The only request in each issue is to comment the numbers on the issue. This comment starts this workflow.
+  - Then the two loops complete in the GitHub web interface with no local step.

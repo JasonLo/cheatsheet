@@ -1,6 +1,6 @@
 # Validation with Pydantic v2
 
-_Grounded in JasonLo's repos as of 2026-06-06; current practice per Pydantic v2.12 release notes and official docs._
+_Grounded in JasonLo's repos as of 2026-06-06. Current practice is from the Pydantic v2.12 release notes and official docs._
 
 ## Reference snippet
 
@@ -9,12 +9,12 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# Reusable constraint lives in the TYPE, not a per-model method.
+# Put a reusable constraint in the TYPE, not in a method of each model.
 Confidence = Annotated[int, Field(ge=0, le=10)]
 
 
 class Strict(BaseModel):
-    # Boundary policy declared once, inherited everywhere.
+    # Declare the boundary policy one time. All subclasses inherit it.
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
@@ -25,38 +25,42 @@ class Decision(Strict):
     score: Confidence
 
     @model_validator(mode="after")
-    def _check_pick(self) -> Decision:  # cross-field invariant → model_validator
+    def _check_pick(self) -> Decision:  # invariant across fields: use model_validator
         if self.action == "accept" and not self.pick:
             raise ValueError("action='accept' requires pick")
         return self
 
 
-# At the boundary: parse, don't construct-and-hope.
+# At the boundary: parse the data. Do not construct the model and hope that it is valid.
 d = Decision.model_validate({"action": "accept", "pick": "x", "score": 7})
-payload = d.model_dump(mode="json")  # not .dict()/.json()
+payload = d.model_dump(mode="json")  # not .dict() or .json()
 ```
 
 ## Typical usage patterns
 
-- **Strict boundary base model** — a shared parent carrying `model_config = ConfigDict(extra="forbid", validate_assignment=True)` so every I/O-crossing model rejects unknown keys and re-validates on mutation. You reach for this whenever data comes from YAML/JSON/subprocess/LLM and you want unexpected fields to fail loudly rather than silently drop. (seen in `JasonLo/best-in-slot:bis/models.py`, the `_Strict` base)
-- **Declarative field constraints over hand-written checks** — `Field(min_length=1)`, `Field(ge=0, le=10)`, `Field(pattern=...)`, `Field(default=3, ge=1, le=10)` carry the rule on the field itself. The intent ("this is a non-empty string / a bounded int") is part of the schema, not buried in a method. (seen in `JasonLo/best-in-slot:bis/models.py` and `bis/config.py`)
-- **`model_validator(mode="after")` for cross-field invariants** — when a rule spans multiple fields (e.g. "action X requires field Y"), an after-validator runs on the fully-built instance and returns `self`. This is the home for conditional-requirement logic that no single `Field` can express. (seen in `JasonLo/best-in-slot:bis/models.py`, the per-action `_check_pick` validators)
+- **Strict base model at the boundary.** A shared parent sets `model_config = ConfigDict(extra="forbid", validate_assignment=True)`. Each model for I/O that inherits it rejects unknown keys and validates again on each change. (seen in `JasonLo/best-in-slot:bis/models.py`, the `_Strict` base)
+- **Field constraints, not hand-written checks.** `Field(min_length=1)`, `Field(ge=0, le=10)`, `Field(pattern=...)`, and `Field(default=3, ge=1, le=10)` put the rule on the field. Then the rule is part of the schema. (seen in `JasonLo/best-in-slot:bis/models.py` and `bis/config.py`)
+- **`model_validator(mode="after")` for rules across fields.** Use it when a rule applies to many fields, for example "action X requires field Y". The validator runs on the complete instance and returns `self`. (seen in `JasonLo/best-in-slot:bis/models.py`, the `_check_pick` validators)
 
 ## Learnings
 
-- **"Every rule is a `@validator` method"** → **"The constraint belongs to the type."** A 0–10 bound written as a custom validator function reimplements what `Field(ge=0, le=10)` (or an `Annotated[int, Field(ge=0, le=10)]` alias) states declaratively. v2's mental model: simple value bounds are *schema*, not procedure — reserve validators for logic the type system genuinely can't express (cross-field, side-effecting, parse-then-coerce). (seen in a private LLM-screening model, where a `validate_confidence` function duplicates a plain range bound)
-- **"Generate derived defaults in `model_post_init`"** → **"A self-generating default belongs to the field."** Filling a blank `id` after construction reconstructs imperatively what `Field(default_factory=lambda: uuid4().hex[:8])` declares at the field. `model_post_init` is for cross-field derived state; a single field's default-on-absence is a property of that field. (seen in a private time-tracking model)
-- **"Build the object, then trust it"** → **"Parse at the boundary with `model_validate`."** Untrusted input (dict from YAML/JSON/an LLM) should enter through `Model.model_validate(data)` and leave through `model_dump(mode="json")` — not the v1 `parse_obj`/`.dict()`/`.json()` trio. The shift is treating the model as a *parse boundary* that converts unknown data into a trusted instance, not just a container you populate.
-- **"`from __future__ import annotations` helps Pydantic resolve types"** → **"Python 3.14 natively defers annotations; the import now conflicts."** PEP 563 (the `__future__` import) stringifies all annotations, clashing with Pydantic v2.12's type-resolution on Python 3.14 — causing `ClassVar` NameErrors and `TypedDict`/`Required` failures (pydantic/pydantic#12393, #12421). Python 3.14 adopted PEP 649, making lazy annotation evaluation the default; the import is unnecessary and harmful on 3.14+. Drop it; Pydantic v2.12 handles deferred annotations correctly without it. (seen in `JasonLo/best-in-slot:bis/models.py` and `bis/config.py`)
+- **A generated default is a step after construction** → **A generated default belongs to the field**. The call `Field(default_factory=lambda: uuid4().hex[:8])` declares a default `id` on the field. Use `model_post_init` only for calculated state across many fields. (seen in a private time-tracking model)
+- **You build the object and then trust it** → **The model is a parse boundary**. Untrusted input enters through `Model.model_validate(data)` and leaves through `model_dump(mode="json")`, not `parse_obj`/`.dict()`/`.json()`. The model converts unknown data into a trusted instance.
+- **`from __future__ import annotations` helps Pydantic resolve types** → **Python 3.14 evaluates annotations only when code uses them, and the import now causes errors**. With Pydantic v2.12 on Python 3.14, the import causes `ClassVar` NameErrors and `TypedDict`/`Required` failures. Remove it. (seen in `JasonLo/best-in-slot:bis/models.py` and `bis/config.py`)
 
 ## Agent rules
 
-- ALWAYS express simple value bounds as `Field(ge=, le=, min_length=, pattern=)` or an `Annotated[...]` alias — never a custom validator that only re-checks a range.
-- ALWAYS reserve `@field_validator` / `@model_validator(mode="after")` for cross-field or genuinely custom logic; return `self` from after-validators.
-- ALWAYS declare boundary policy once via a shared base with `model_config = ConfigDict(extra="forbid", validate_assignment=True)` for I/O-crossing models.
-- ALWAYS use `ConfigDict(alias_generator=..., populate_by_name=True)` for a uniform camelCase boundary instead of per-field `alias=`; reserve per-field `alias=` for irregular one-off names.
-- ALWAYS use `Field(default_factory=...)` for mutable or self-generating defaults — never `model_post_init` for a single field's default-on-absence, never a bare `= []` when a factory reads more clearly.
-- ALWAYS write annotations as `X | None` / `list[X]` (PEP 604/585), not `Optional[X]` / `List[X]`.
-- ALWAYS cross the boundary with `model_validate` / `model_dump` / `model_dump_json` — NEVER the v1 `parse_obj` / `.dict()` / `.json()`.
-- NEVER use `class Config:` — it's `model_config = ConfigDict(...)` in v2.
-- NEVER add `from __future__ import annotations` to Python 3.14+ Pydantic code — Python 3.14 evaluates annotations lazily by default (PEP 649); mixing it with Pydantic v2.12's type resolution causes `ClassVar` and `TypedDict`/`Required` failures.
+- ALWAYS write simple value bounds as `Field(ge=, le=, min_length=, pattern=)` or an `Annotated[...]` alias.
+- NEVER write a custom validator that only checks a range again.
+- ALWAYS limit `@field_validator` and `@model_validator(mode="after")` to logic across fields or other custom logic.
+- ALWAYS return `self` from after-validators.
+- ALWAYS declare the boundary policy one time in a shared base with `model_config = ConfigDict(extra="forbid", validate_assignment=True)`.
+- ALWAYS use `ConfigDict(alias_generator=..., populate_by_name=True)` for a uniform camelCase boundary.
+- ALWAYS limit an `alias=` on a single field to irregular single names.
+- ALWAYS use `Field(default_factory=...)` for mutable or generated defaults.
+- NEVER use `model_post_init` to set the default of a single field.
+- ALWAYS write PEP 604 and PEP 585 annotations, for example `X | None` and `list[X]`, not `Optional[X]` and `List[X]`.
+- ALWAYS use `model_validate`, `model_dump`, and `model_dump_json` at the boundary.
+- NEVER use the v1 `parse_obj`, `.dict()`, or `.json()` methods.
+- NEVER use `class Config:` in v2.
+- NEVER add `from __future__ import annotations` to Pydantic code on Python 3.14 or later.

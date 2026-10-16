@@ -1,6 +1,6 @@
 # Web API servers with FastAPI
 
-_Grounded in JasonLo's repos as of 2026-06-05; current practice per official FastAPI docs (context7 `/fastapi/fastapi`, v0.128.x)._
+_Grounded in JasonLo's repos as of 2026-06-05. Current practice is from official FastAPI docs (context7 `/fastapi/fastapi`, v0.128.x)._
 
 ## Reference snippet
 
@@ -12,12 +12,12 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from pydantic import BaseModel
 
 
-# --- shared resource wired via lifespan, read via Depends ---
+# --- shared resource: lifespan sets it, Depends reads it ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.model = load_model()      # startup: acquire
-    yield                               # serve requests
-    app.state.model = None              # shutdown: release
+    app.state.model = load_model()      # startup: get the resource
+    yield                               # the app serves requests
+    app.state.model = None              # shutdown: release the resource
 
 
 def get_model(request: Request) -> Model:
@@ -43,33 +43,38 @@ async def speak(body: SpeakRequest, model: ModelDep) -> dict[str, str]:
 app = FastAPI(title="my-service", lifespan=lifespan)
 app.include_router(router)
 
-# run: uv run fastapi dev   (dev)  |  uvicorn api.main:app --host 0.0.0.0 --port 8000  (prod)
+# run in dev: uv run fastapi dev. Run in prod: uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## Typical usage patterns
 
-- **Lifespan for model/backend warmup** — `@asynccontextmanager` loads a heavy model/client on startup, cleans up after `yield`; pre-load failures degrade to lazy-load-on-first-request. Your standard shape for any GPU/ML service.
-- **`APIRouter` + `include_router(prefix=..., tags=...)`** — endpoints live in `routers/`, mounted onto a thin `main.py` app; keeps the OpenAI-compatible surface isolated from app wiring.
-- **Async path operations** — `async def` handlers for I/O-bound work; `asyncio.Semaphore` caps concurrent GPU generations so requests don't starve VRAM.
+- An `@asynccontextmanager` lifespan loads a large model or client at startup and releases it after `yield`. If the pre-load fails, the service loads the model on the first request.
+- The endpoints are in `routers/` as an `APIRouter`, and a small `main.py` mounts them with `include_router(prefix=..., tags=...)`. This keeps the OpenAI-compatible API separate from the app setup.
+- Use `async def` handlers for I/O-bound work. An `asyncio.Semaphore` limits concurrent GPU generations, so requests do not use all the VRAM.
 
 ## Learnings
 
-- **`@app.on_event("startup")` + module-level `global` resource → lifespan context manager owning the resource.** One scope acquires *and* releases; no globals, no half-initialized state, and startup/shutdown logic that shares variables lives together. `on_event` is deprecated.
-- **Module globals / direct imports for shared state → `Depends` injection (read from `app.state` or a cached factory).** Wiring becomes explicit and overridable per-request, which makes handlers testable and swappable instead of bound to import-time singletons.
-- **Blocking I/O (`requests`, sync DB calls) inside a handler → either an `async` client awaited in `async def`, or keep it `def` so FastAPI offloads it to the threadpool.** A blocking call in an `async def` route stalls the whole event loop; pick the mode that matches the work.
+- **`@app.on_event("startup")` sets a module-level `global` resource** → **A lifespan context manager owns the resource.** One scope gets and releases the resource. There are no globals and no partly initialized state, and the lifespan replaces the deprecated `on_event` hooks.
+- **Handlers read shared state from module globals or imports** → **Handlers receive shared state through `Depends` injection.** The provider reads `app.state` or a cached factory. You can then override the dependencies for each request and test the handler.
+- **Any handler can call `requests` or sync DB code** → **Match the handler mode to the work.** Blocking I/O in `async def` stops the event loop. Use an awaited `async` client in `async def`, or a plain `def` handler that FastAPI runs in the threadpool.
 
 ## Agent rules
 
-- ALWAYS manage startup/shutdown with an `@asynccontextmanager` `lifespan=` passed to `FastAPI(...)`.
+- ALWAYS manage startup and shutdown with an `@asynccontextmanager` function that you pass to `FastAPI(lifespan=...)`.
 - NEVER use `@app.on_event("startup")` / `@app.on_event("shutdown")`.
-- ALWAYS store shared resources on `app.state` and read them through a `Depends` provider.
-- NEVER reach for module-level `global` singletons or import-time state to share resources across handlers.
-- ALWAYS make a handler that does blocking I/O either `async def` with an awaited async client, or plain `def` (let FastAPI threadpool it).
-- NEVER call blocking I/O (`requests`, sync DB drivers) directly inside an `async def` route.
-- ALWAYS define request/response shapes as pydantic v2 `BaseModel`s with `Field(...)` and annotate handler return types.
-- NEVER use pydantic v1 `class Config:`; use `model_config` / `SettingsConfigDict`.
-- ALWAYS group routes in `APIRouter` and attach via `app.include_router(prefix=..., tags=...)`.
-- ALWAYS hoist repeated dependencies into a reusable `Annotated[T, Depends(dep)]` alias.
-- ALWAYS gate scarce resources (e.g. GPU) with `asyncio.Semaphore` in async handlers.
-- ALWAYS run dev via `fastapi dev` and prod via `uvicorn <module>:app`.
-- ALWAYS enter `TestClient` as a context manager so lifespan runs in tests.
+- ALWAYS store shared resources on `app.state`.
+- ALWAYS read shared resources through a `Depends` provider.
+- NEVER use module-level `global` singletons or import-time state to share resources across handlers.
+- ALWAYS make a blocking-I/O handler either `async def` with an awaited async client or plain `def` for the threadpool.
+- NEVER call blocking I/O, for example `requests` or sync DB drivers, directly inside an `async def` route.
+- ALWAYS define request and response shapes as pydantic v2 `BaseModel`s with `Field(...)`.
+- ALWAYS annotate handler return types.
+- NEVER use pydantic v1 `class Config:`.
+- ALWAYS use `model_config` / `SettingsConfigDict` for model configuration.
+- ALWAYS group routes in an `APIRouter`.
+- ALWAYS attach each router with `app.include_router(prefix=..., tags=...)`.
+- ALWAYS move repeated dependencies into a reusable `Annotated[T, Depends(dep)]` alias.
+- ALWAYS limit resources with a small supply, for example GPU, with `asyncio.Semaphore` in async handlers.
+- ALWAYS run development with `fastapi dev`.
+- ALWAYS run production with `uvicorn <module>:app`.
+- ALWAYS enter `TestClient` as a context manager so the lifespan runs in tests.

@@ -1,19 +1,22 @@
 name: "Cheatsheet generate from selection"
 
-# Closes the loop end-to-end in the GitHub web UI (I-2 O-6/O-7): when the repo OWNER
-# comments a topic selection (e.g. "1 and 3") on an open cheatsheet issue, generate
-# each chosen sheet via the I-1 `cheatsheet` skill and open ONE human-reviewed PR for
-# the whole run that bundles every chosen sheet. The PR body carries `Closes #<issue>`,
-# so merging it auto-closes the originating issue (O-7). No local step, no auto-merge.
-# Serves BOTH issue kinds:
-#   - "Cheatsheet recommendations …" → generate NEW sheets (skip any already covered)
+# This workflow completes the loop from start to end in the GitHub web UI (I-2 O-6/O-7).
+# The trigger is a topic selection comment from the repo OWNER, for example "1 and 3".
+# The comment must be on an open cheatsheet issue.
+# The workflow generates each chosen sheet with the I-1 `cheatsheet` skill.
+# Then it opens ONE PR for the whole run, and a human reviews that PR.
+# The PR contains every chosen sheet.
+# The PR body contains `Closes #<issue>`. When the owner merges the PR, GitHub closes the issue (O-7).
+# There is no local step and no auto-merge.
+# The workflow serves BOTH kinds of issue:
+#   - "Cheatsheet recommendations …" → generate NEW sheets (skip each topic that already has a sheet)
 #   - "Cheatsheet refresh …"         → REGENERATE the selected existing sheets
 #
-# CAVEAT — issue_comment workflows ALWAYS run the copy on the DEFAULT BRANCH (main),
-# never a feature branch. So:
-#   1. This file only takes effect once merged to main.
-#   2. The issue_comment path cannot be tested from a branch — use the
-#      workflow_dispatch path (issue_number + selection inputs) for pre-merge testing.
+# CAVEAT: issue_comment workflows ALWAYS run the copy on the DEFAULT BRANCH (main).
+# They never run the copy on a feature branch. As a result:
+#   1. This file has an effect only after the owner merges it to main.
+#   2. You cannot test the issue_comment path from a branch. For tests before the
+#      merge, use the workflow_dispatch path with the issue_number and selection inputs.
 
 on:
   issue_comment:
@@ -21,28 +24,28 @@ on:
   workflow_dispatch:
     inputs:
       issue_number:
-        description: "Recommendations issue number to read the table from"
+        description: "Number of the recommendations issue that contains the table"
         required: true
       selection:
-        description: 'Topic numbers to generate, e.g. "1 and 3"'
+        description: 'Topic numbers to generate, for example "1 and 3"'
         required: true
 
-permissions:                # least privilege: open PRs + ack the triggering comment
+permissions:                # least privilege: open PRs and acknowledge the comment that started the run
   contents: write
   pull-requests: write
-  issues: write             # react 👀 to the comment that kicked this run off
-  id-token: write           # OIDC — required by claude-code-action
+  issues: write             # add a 👀 reaction to the comment that started this run
+  id-token: write           # OIDC. claude-code-action requires it.
 
 concurrency:
-  # Per-issue group: selections on different issues run in parallel; repeated
-  # comments on the SAME issue serialize so two runs can't race to create a branch.
+  # One group for each issue. Selections on different issues run in parallel.
+  # Comments on the SAME issue run one after the other. Two runs cannot try to create the same branch at the same time.
   group: "cheatsheet-generate-${{ github.event.issue.number || inputs.issue_number }}"
   cancel-in-progress: false
 
 jobs:
   generate:
-    # issue_comment path: owner-only, open recommendations/refresh issue, not a PR comment.
-    # workflow_dispatch path always runs (manual testing).
+    # issue_comment path: only the owner, only an open recommendations or refresh issue, and not a PR comment.
+    # The workflow_dispatch path always runs (for manual tests).
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
@@ -52,20 +55,20 @@ jobs:
        (startsWith(github.event.issue.title, 'Cheatsheet recommendations') ||
         startsWith(github.event.issue.title, 'Cheatsheet refresh')))
     runs-on: ubuntu-latest
-    timeout-minutes: 60       # up to ~3 sheets generated from scratch (tunable)
+    timeout-minutes: 60       # Sufficient for approximately 3 new sheets. You can change this value.
     env:
-      # gh writes (branch push, PRs) target THIS repo via the default token.
+      # gh writes (branch push, PRs) go to THIS repo with the default token.
       GH_TOKEN: ${{ github.token }}
-      # Read-only PAT (contents+metadata, all repos incl. private) for cross-repo mining.
+      # Read-only PAT (contents and metadata, all repos, private repos too) for cross-repo mining.
       GH_SCAN_TOKEN: ${{ secrets.GH_SCAN_TOKEN }}
-      # Untrusted event/input data passed as env (NEVER interpolated into the prompt).
+      # The workflow does not trust event and input data. It passes the data as env. It NEVER puts it into the prompt.
       ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
       SELECTION_COMMENT: ${{ github.event.comment.body }}
       DISPATCH_SELECTION: ${{ inputs.selection }}
     steps:
-      - name: Acknowledge the triggering comment with 👀
-        # issue_comment path only — the workflow_dispatch path has no comment to react to.
-        # Signals "received, working on it" the moment the gated job kicks off.
+      - name: Acknowledge the comment that started this run with 👀
+        # Only the issue_comment path runs this step. The workflow_dispatch path has no comment.
+        # The reaction tells the owner that the job received the comment and started.
         if: github.event_name == 'issue_comment'
         run: |
           gh api --method POST \
@@ -73,122 +76,145 @@ jobs:
             "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
             -f content=eyes
 
-      - name: Preflight — require the read-only scan token
+      - name: Preflight - require the read-only scan token
         run: |
           if [ -z "${GH_SCAN_TOKEN}" ]; then
             echo "::error::GH_SCAN_TOKEN secret is not set. Add a read-only fine-grained PAT (contents+metadata, all repos) named GH_SCAN_TOKEN."
             exit 1
           fi
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6 — bump the SHA deliberately
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6. Change the SHA only intentionally.
         with:
-          fetch-depth: 0      # full history so per-topic branches fork cleanly off main
+          fetch-depth: 0      # Full history, so that the run branch starts cleanly from main.
 
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8 — bump the SHA deliberately
-        # `uv run scripts/register_cheatsheet.py` (step 4 below) needs uv + Python on PATH;
-        # the runner ships neither, so set it up before the agent runs. uv fetches the
-        # script's required Python (>=3.14) on demand.
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8. Change the SHA only intentionally.
+        # `uv run scripts/register_cheatsheet.py` (step 3 below) needs uv and Python on PATH.
+        # The runner has neither. For this reason, this step installs uv before the agent runs.
+        # uv downloads the Python version that the script requires (>=3.14) when necessary.
 
-      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1 — bump the SHA deliberately
+      - uses: anthropics/claude-code-action@41ea7642c1436fa0ee57aae58347904b71a5af27  # v1. Change the SHA only intentionally.
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           claude_args: |
             --max-turns 120
-            --allowedTools "Read,Glob,Grep,Edit,Write,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(git status:*),Bash(git diff:*),Bash(git switch:*),Bash(git checkout:*),Bash(git restore:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(uv run:*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,WebSearch,WebFetch,Bash(date:*),Bash(gh api:*),Bash(gh search code:*),Bash(gh search commits:*),Bash(gh repo list:*),Bash(gh repo view:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(git status:*),Bash(git diff:*),Bash(git switch:*),Bash(git checkout:*),Bash(git restore:*),Bash(git add:*),Bash(git commit:*),Bash(git push -u origin auto/:*),Bash(uv run:*)"
           prompt: |
-            You are the selection-triggered generate agent for this cheatsheet repo (intent I-2, outcome O-6).
-            A user picked one or more topics by commenting on a cheatsheet issue. That issue is EITHER a
-            "Cheatsheet recommendations …" issue (the picks are NEW sheets to generate) OR a
-            "Cheatsheet refresh …" issue (the picks are EXISTING sheets to regenerate). Your job: generate
-            or regenerate every chosen sheet and open ONE pull request for the whole run that bundles
-            ALL of them. The whole loop must complete in the GitHub web UI — you NEVER merge, approve,
-            or close anything yourself (merging the single PR auto-closes the issue via the `Closes #N`
-            keyword you put in its body — that is the only closing mechanism, and the human triggers it).
+            You are the generate agent for this cheatsheet repo (intent I-2, outcome O-6). A selection comment starts you.
+            A user selected one or more topics with a comment on a cheatsheet issue. That issue is one of two kinds:
+            - A "Cheatsheet recommendations …" issue. The selected topics are NEW sheets to generate.
+            - A "Cheatsheet refresh …" issue. The selected topics are EXISTING sheets to regenerate.
+            Your task has two parts:
+            - Generate or regenerate every selected sheet.
+            - Open ONE pull request for the whole run. This PR contains ALL of the sheets.
+            The whole loop must complete in the GitHub web UI.
+            You NEVER merge, approve, or close anything.
+            Put the `Closes #N` keyword in the PR body. When the human merges the single PR, GitHub closes the issue.
+            This is the only way to close the issue, and the human starts it.
 
             ## Orientation (read first)
             - Read `CLAUDE.md`, `specs/CONSTITUTION.md`, and `.claude/skills/cheatsheet/SKILL.md`.
-              The SKILL.md is your generation procedure — follow its mining → grounding →
-              classification → authoring workflow for each selected sheet, including its slug rule
-              and required sheet structure.
-            - Resolve the GitHub login once: `gh api user --jq .login` (uses the scan token below).
-            - Capture today's date: `date -u +%Y-%m-%d`. You start on the repo's default branch.
+            - The SKILL.md is your generation procedure. Follow its workflow for each selected sheet.
+              The workflow has these stages: mining → grounding → classification → authoring.
+              Obey its slug rule and its required sheet structure.
+            - Get the GitHub login one time: `uv run scripts/gh_scan.py api user --jq .login`. The default token cannot read `/user`.
+            - Get today's date: `date -u +%Y-%m-%d`.
+            - You start on the default branch of the repo.
 
-            ## Resolve the selection (do this before anything else)
-            - The issue number is in `$ISSUE_NUMBER`. Read it (default token, THIS repo):
+            ## Resolve the selection (do this before all other steps)
+            - The issue number is in `$ISSUE_NUMBER`. Read the issue with the default token from THIS repo:
               `gh issue view "$ISSUE_NUMBER" --json title,body,state`.
-            - CONFIRM the issue state is OPEN and its title begins with EITHER `Cheatsheet recommendations`
-              OR `Cheatsheet refresh`. If either check fails, STOP immediately and open no PR.
-            - Determine the MODE from the title:
-              - title starts with `Cheatsheet recommendations` → **generate mode** (selected rows are NEW sheets).
-              - title starts with `Cheatsheet refresh` → **refresh mode** (selected rows are EXISTING sheets to regenerate).
-            - The issue body contains a markdown table. In BOTH issue kinds column 2 is the use case and
-              column 3 is the backtick-wrapped target (recommendations: `| # | Topic (use case) | Target | … |`;
-              refresh: `| # | Cheatsheet (use case) | Target | … |`). Ignore the remaining columns.
-            - The selected numbers come from `$SELECTION_COMMENT` (when triggered by a comment) or
-              `$DISPATCH_SELECTION` (when run manually). Parse whichever is non-empty for integers;
-              accept forms like "1 and 3", "1,3", "1 & 3", "1 3".
-            - For each selected number, read THAT table row and extract the use case (column 2) and
-              Target (column 3, the backtick-wrapped value). These are the inputs to the SKILL.md
-              procedure. Skip any selected number that has no matching row and report it.
-              NEVER invent a topic that is not in the table.
+            - CONFIRM that the issue state is OPEN.
+            - CONFIRM that the issue title starts with `Cheatsheet recommendations` OR `Cheatsheet refresh`.
+            - If one of these checks fails, STOP immediately. Do not open a PR.
+            - Use the title to find the MODE:
+              - The title starts with `Cheatsheet recommendations` → **generate mode**. The selected rows are NEW sheets.
+              - The title starts with `Cheatsheet refresh` → **refresh mode**. The selected rows are EXISTING sheets to regenerate.
+            - The issue body contains a markdown table.
+              In BOTH kinds of issue, column 2 is the use case. Column 3 is the target in backticks.
+              Recommendations table: `| # | Topic (use case) | Target | … |`.
+              Refresh table: `| # | Cheatsheet (use case) | Target | … |`.
+              Ignore the other columns.
+            - The selected numbers come from `$SELECTION_COMMENT` (comment trigger) or `$DISPATCH_SELECTION` (manual run).
+            - Use the variable that is not empty, and get the integers from it.
+            - Accept forms such as "1 and 3", "1,3", "1 & 3", "1 3".
+            - For each selected number, read THAT table row.
+              Get the use case from column 2. Get the Target from column 3 (the value in backticks).
+              These values are the inputs to the SKILL.md procedure.
+            - If a selected number has no matching row, skip it and report it.
+            - NEVER invent a topic that is not in the table.
 
             ## Two-token rule (NON-NEGOTIABLE security boundary)
-            - CROSS-REPO READS (mining other repos inside the skill): ALWAYS prefix with the read-only
-              token, e.g. `GH_TOKEN=$GH_SCAN_TOKEN gh search code ...`,
-              `GH_TOKEN=$GH_SCAN_TOKEN gh api repos/<o>/<r>/contents/<p> ...`.
-            - READING THE ISSUE and WRITES (branch push, `gh pr create`) in THIS repo: use plain
-              `gh`/`git` (default token).
-            - NEVER use the default token to read other repos; NEVER use the scan token to write.
-            - You have NO merge/approve/close ability and MUST NOT attempt one — your only output is PRs.
+            - For CROSS-REPO READS (reads of other repos in the skill), ALWAYS put the read-only token first.
+              For example: `uv run scripts/gh_scan.py search code ...`,
+              `uv run scripts/gh_scan.py api repos/<o>/<r>/contents/<p> ...`.
+            - To READ THE ISSUE in THIS repo, use plain `gh` or `git` (default token).
+            - To WRITE in THIS repo (branch push, `gh pr create`), use plain `gh` or `git` (default token).
+            - NEVER use the default token to read other repos.
+            - NEVER use the scan token to write.
+            - You have NO permission to merge, approve, or close. You MUST NOT try to do these things.
+            - Your only output is PRs.
 
-            ## Privacy (Constitution P-7) — applies to every PR title, body, and file
-            - For each mined repo resolve visibility: `GH_TOKEN=$GH_SCAN_TOKEN gh repo view <login>/<repo> --json visibility -q .visibility`.
-            - NEVER put a PRIVATE repo's name/slug/URL or verbatim code in any committed file or PR text.
-              Convey private-sourced patterns generalized. Public repos may be cited.
+            ## Privacy (Constitution P-7). This applies to every PR title, PR body, and file.
+            - For each mined repo, get the visibility: `uv run scripts/gh_scan.py repo view <login>/<repo> --json visibility -q .visibility`.
+            - NEVER put the name, slug, URL, or verbatim code of a PRIVATE repo in a committed file.
+            - NEVER put the name, slug, URL, or verbatim code of a PRIVATE repo in PR text.
+            - Make patterns from private repos general.
+            - You can cite public repos.
 
-            ## Task — produce ONE pull request for the whole run, bundling every selected sheet
-            One run → one branch → one PR, carrying every sheet you generate this run. The branch name
-            and PR title depend on the MODE resolved above.
+            ## Task: make ONE pull request for the whole run, with every selected sheet in it
+            One run has one branch and one PR. The PR contains every sheet that you generate in this run.
+            The branch name and the PR title depend on the MODE that you found above.
 
-            1. **Pick the run branch (once, off the default branch), by MODE:**
-               - **generate mode** — `auto/generate/from-issue-$ISSUE_NUMBER`
-               - **refresh mode**  — `auto/refresh/from-issue-$ISSUE_NUMBER`
-               Run-level duplicate guard: `gh pr list --state open --head <branch> --json number` — if an
-               open PR already targets this branch, STOP and report "PR already open for this selection"
-               (the concurrency group serializes repeat comments; do not open a second PR). Otherwise
-               `git switch -c <branch>` off the default branch.
+            1. **Select the run branch one time, from the default branch. Use the MODE:**
+               - **generate mode**: `auto/generate/from-issue-$ISSUE_NUMBER`
+               - **refresh mode**: `auto/refresh/from-issue-$ISSUE_NUMBER`
+               Check for a duplicate run: `gh pr list --state open --head <branch> --json number`.
+               If an open PR already uses this branch, STOP and report "PR already open for this selection".
+               The concurrency group runs repeated comments one after the other. Do not open a second PR.
+               If no open PR uses the branch, run `git switch -c <branch>` from the default branch.
 
-            2. **For EACH resolved `(use case, target)`, add its sheet to this one branch:**
-               a. Compute the slug exactly as SKILL.md defines it (the same rule maps an existing sheet's
-                  `<use case> with <target>` H1 back to its `cheatsheets/<slug>.md` filename).
-               b. Per-sheet existence check by MODE:
-                  - **generate mode** — if `cheatsheets/<slug>.md` already exists on the default branch,
-                    SKIP this topic and report "already covered" (refreshing is the refresh path's job).
-                  - **refresh mode** — if `cheatsheets/<slug>.md` is NOT present on the default branch,
-                    SKIP this topic and report "no such sheet to refresh" (never create a new sheet here).
-               c. Run the SKILL.md workflow against TODAY's repos (cross-repo reads) and TODAY's docs
-                  (context7 if available, else WebSearch + WebFetch of official docs/changelog). Write the
-                  full required structure to `cheatsheets/<slug>.md` (generate mode creates it; refresh
-                  mode overwrites the existing file). Do NOT switch branches or commit between topics —
-                  accumulate every sheet on the same working tree.
+            2. **For EACH resolved `(use case, target)`, add its sheet to this branch:**
+               a. Calculate the slug exactly as SKILL.md defines it.
+                  The same rule maps the `<use case> with <target>` H1 of an existing sheet to its `cheatsheets/<slug>.md` file name.
+               b. Check if the sheet exists. The check depends on the MODE:
+                  - **generate mode**: Sometimes `cheatsheets/<slug>.md` already exists on the default branch.
+                    In that case, SKIP this topic and report "already covered". The refresh path does refreshes.
+                  - **refresh mode**: Sometimes `cheatsheets/<slug>.md` is NOT on the default branch.
+                    In that case, SKIP this topic and report "no such sheet to refresh". Never create a new sheet in this mode.
+               c. Run the SKILL.md workflow on the repos of TODAY (cross-repo reads) and the docs of TODAY.
+                  For docs, use context7 if it is available. If not, use WebSearch and WebFetch on official docs and changelogs.
+                  Write the full required structure to `cheatsheets/<slug>.md`.
+                  In generate mode, you create the file. In refresh mode, you replace the existing file.
+                  Do NOT change branches between topics. Do NOT commit between topics.
+                  Keep every sheet on the same working tree.
 
-            3. **Register the index once, after all sheets are written:** run
-               `uv run scripts/register_cheatsheet.py`, then `git add` the new/changed `cheatsheets/*.md`
-               and `index.md` (stage `index.md` only if it actually changed — generate always adds rows;
-               refresh changes it only when a title changed).
+            3. **Register the index one time, after you write all sheets:**
+               Run `uv run scripts/register_cheatsheet.py`.
+               Then run `git add` on the new or changed `cheatsheets/*.md` files and on `index.md`.
+               Stage `index.md` only if it changed.
+               In generate mode, the script always adds rows. In refresh mode, it changes the index only when a title changed.
 
-            4. **Open exactly ONE PR for the run.** If at least one sheet was written, `git commit` all of
-               it, `git push -u origin <branch>`, then `gh pr create`. PR title by MODE:
+            4. **Open exactly ONE PR for the run.**
+               If the run wrote one or more sheets, run `git commit` for all of them.
+               Then run `git push -u origin <branch>`, and then `gh pr create`. Use the PR title for the MODE:
                - generate mode: `feat(cheatsheet): add selected sheets from #$ISSUE_NUMBER`
                - refresh mode:  `chore(cheatsheet): refresh selected sheets from #$ISSUE_NUMBER`
-               PR body: a short SUMMARY with one bullet/section per bundled sheet (use case + target, the
-               doc source it was grounded in; in refresh mode, what idiom/Learning/Agent rule shifted and
-               why) — NOT a raw diff, and NEVER any private repo identifier/content. End the body with a
-               line that is exactly `Closes #$ISSUE_NUMBER` so merging the PR auto-closes the issue (O-7).
+               PR body: a short SUMMARY with one bullet or section for each sheet in the PR.
+               - Give the use case, the target, and the doc source for the grounding.
+               - In refresh mode, also tell which usage pattern, Learning, or Agent rule changed, and why.
+               - Do NOT give a raw diff.
+               - NEVER give a private repo identifier or private content.
+               The last line of the body must be exactly `Closes #$ISSUE_NUMBER`.
+               This line makes GitHub close the issue when the owner merges the PR (O-7).
 
             ## Finish
-            - If NO topic resolved (all skipped/duplicate/unmatched), open zero PRs, do not push an empty
-              branch, and print a one-line "no cheatsheets generated" with the reason.
-            - Report: the issue read, the selection parsed, topics bundled into the PR, the single PR
-              opened (with branch name), and any skipped/duplicate/unmatched numbers.
+            - Sometimes NO topic resolves. For example, you skip all numbers, or all numbers are duplicates or have no match.
+              In that case, open zero PRs and do not push an empty branch.
+              Print one line, "no cheatsheets generated", with the reason.
+            - Report these items:
+              - the issue that you read
+              - the selection that you parsed
+              - the topics in the PR
+              - the single PR that you opened, with the branch name
+              - all skipped, duplicate, or unmatched numbers

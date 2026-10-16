@@ -1,147 +1,178 @@
 ---
 name: cheatsheet
-description: Generate a self-maintaining personal cheatsheet from a use case + explicit target. Mines the user's OWN GitHub repos (via gh) for how they actually use the target, grounds it in current official docs (context7 + web), and writes a cheatsheet whose Learnings section corrects obsolete patterns at the conceptual level. Triggers on "make a cheatsheet", "cheatsheet for X", "/cheatsheet", "how do I use X in my repos".
+description: Make a personal cheatsheet from a use case and a named target. The skill mines the user's OWN GitHub repos with gh to find how they use the target. It compares this usage with the current official docs (context7 and web). It writes a cheatsheet in Simplified Technical English. The Learnings section corrects old patterns at the level of concepts. Triggers on "make a cheatsheet", "cheatsheet for X", "/cheatsheet", "how do I use X in my repos".
 ---
 
 # cheatsheet
 
-Produce a human-facing cheatsheet for a **use case** anchored to an explicit
-**target** (a library, tool, repo, or path). The cheatsheet captures how the
-user *actually* uses the target today and corrects where that usage has gone
-stale — focused on concepts and intent. One small reference snippet shows the
-current shape; the prose stays conceptual, never syntax-diff trivia.
+Make a cheatsheet for a **use case** and a named **target**. A target is a
+library, a tool, a repo, or a path. The cheatsheet shows how the user uses the
+target today. It also corrects the usage that is not current. The cheatsheet is
+about concepts and intent. One small reference snippet shows the current form of
+the code. The prose stays at the level of concepts and does not list syntax changes.
 
 ## Inputs
 
-- **Use case** (free text) — e.g. "data fetching", "config loading".
-- **`--target`** (required) — the library/tool/repo/path to anchor on, e.g.
-  `httpx`, `pydantic`, `owner/repo`, `src/db/`.
+- **Use case** (free text). Examples are "data fetching" and "config loading".
+- **`--target`** (required). This is the library, tool, repo, or path for the
+  cheatsheet. Examples are `httpx`, `pydantic`, `owner/repo`, and `src/db/`.
 
-If `--target` is missing, ask for it once before proceeding.
+If `--target` is missing, ask for it one time before you continue.
 
 ## Workflow
 
-1. **Resolve the GitHub identity.** Run `gh api user --jq .login` to get the
-   authenticated login (e.g. `jasonlo`). All GitHub access in this skill uses
-   the `gh` CLI only — never a direct API call or SDK (Constitution P-5).
+1. **Get the GitHub identity.** Run `gh api user --jq .login` to get the login
+   of the authenticated user (for example, `jasonlo`). Use only the `gh` CLI
+   for GitHub access in this skill. Do not use a direct API call or an SDK
+   (Constitution P-5).
 
-2. **Collect the user's real usage across their repos.** Search the user's own
-   code for the target and gather the most relevant files:
-   - `gh search code --owner <login> "<target>" --limit 50 --json repository,path`
-   - When useful, enumerate repos first: `gh repo list <login> --limit 200 --json name,pushedAt`
-   - Fetch candidate file contents (raw, no decode step needed):
+2. **Collect the usage from the user's repos.** Search the user's code for the
+   target. Keep the files that are most related to the use case.
+   - Search the code:
+     `gh search code --owner <login> "<target>" --limit 50 --json repository,path`
+   - If necessary, list the repos first:
+     `gh repo list <login> --limit 200 --json name,pushedAt`
+   - Get the raw content of each candidate file:
      `gh api repos/<login>/<repo>/contents/<path> -H "Accept: application/vnd.github.raw"`
-   Judge which files genuinely show the use case; keep the handful that best
-   represent the user's idioms, imports, and conventions.
-   - **Tag each kept file's repo visibility (Constitution P-7).** Resolve it once
-     per repo: `gh repo view <login>/<repo> --json visibility -q .visibility`
-     (`PUBLIC` vs anything else). Record visibility alongside each file path.
-   Note the file paths — you will cite **public** sources in the cheatsheet, and
-   **never** the name, slug, URL, or verbatim content of a **private** repo.
+   - Keep the small set of files that best show the user's usual patterns,
+     imports, and conventions for the use case.
+   - **Record the visibility of each repo (Constitution P-7).** Get it one time
+     for each repo:
+     `gh repo view <login>/<repo> --json visibility -q .visibility`.
+     The value is `PUBLIC` or a different value. Record the visibility with each
+     file path.
+   - Write down the file paths. You can cite **public** sources in the
+     cheatsheet. **Never** write the name, slug, URL, or text of a **private**
+     repo.
 
-3. **Establish current best practice.** Pull the target's current official
-   documentation via context7: `resolve-library-id` then `query-docs` scoped to
-   the use case. If context7 has no entry for the target, fall back to
-   WebSearch + WebFetch of the official docs, changelog, or migration guide.
-   Prefer the most recent stable guidance.
+3. **Find the current best practice.** Get the current official documentation
+   for the target from context7. Use `resolve-library-id`, then use `query-docs`
+   for the use case. If context7 has no entry for the target, use WebSearch and
+   WebFetch. Read the official docs, the changelog, or the migration guide. Use
+   the most recent stable guidance.
 
-4. **Classify each observed pattern as current or obsolete.** For every usage
-   you pulled from the user's repos, compare it against the current guidance and
-   label it: still idiomatic, or superseded. For superseded ones, identify the
-   *mental-model shift* behind the change — not just the new function name.
+4. **Mark each pattern as current or not current.** Compare each usage from the
+   user's repos with the current guidance. Mark it as current or as replaced.
+   For each replaced usage, find the change in the mental model. Do not record
+   only the new function name.
 
-5. **Author the cheatsheet** to `cheatsheets/<slug>.md`, where `<slug>` is the
-   lowercased, hyphenated use case + target.
+5. **Write the cheatsheet** to `cheatsheets/<slug>.md`. The `<slug>` is the use
+   case and the target, in lowercase, with hyphens between the words.
 
-   **Write every section in concise point form (O-4).** Short bullets, not
-   paragraphs. Keep a detail only if it is a future-use must-know/tip or carries
-   the conceptual learning; cut incidental narration, restatement, and backstory.
-   One idea per bullet; prefer a clause over a sentence.
+   **Write all prose in ASD-STE100 Simplified Technical English (O-10, P-8).**
+   Code, commands, identifiers, file paths, URLs, and quoted tool output are
+   exempt. Obey these rules:
+   - Write a maximum of 25 words in a descriptive sentence. Write a maximum of
+     20 words in an instruction.
+   - Write one instruction in each sentence. Use the imperative for instructions.
+   - Use the active voice. Use simple tenses.
+   - Use approved STE words, technical names, and technical verbs. Do not use
+     idioms or figurative words.
+   - Do not leave out articles or verbs to make a sentence shorter.
+   - Do not use semicolons, contractions, or "e.g.". Write "for example".
+   - Do not make noun clusters of more than three words.
+
+   **Write each section in short point form (O-4).** Use short bullets, not
+   paragraphs. Each bullet has one or two short sentences. A usage bullet can
+   start with a bold label. A Learning starts with its bold old → new head. An
+   Agent rule has one sentence. Keep a detail only if it is an important tip for
+   future use or if it carries the concept. Remove history, version timelines,
+   benchmarks, prices, and repeated points. Write one idea in each bullet. Do not
+   write prose between the title and the first section, or in the Reference
+   snippet section. Put a note for the snippet in a code comment.
 
    Use this structure exactly:
 
    ````markdown
    # <Use case> with <target>
 
-   _Grounded in <login>'s repos as of <today>; current practice per <doc source>._
+   _Grounded in <login>'s repos as of <today>. Current practice is from <doc source>._
 
    ## Reference snippet
 
    ```<lang>
-   # One minimal, idiomatic block showing present-day usage of <target>,
-   # grounded in the current docs from step 3 — NOT copied from the user's
-   # (possibly obsolete) repo code. Smallest snippet that conveys the shape.
+   # One minimal block that shows the current usage of <target>.
+   # Take it from the current docs of step 3.
+   # Do NOT copy it from the user's repo code, because that code can be old.
    ```
 
-   One small block: the "what does correct usage look like today" anchor,
-   derived from the step-3 docs, not the mined repo files. A single illustrative
-   block — not an API listing. The no-syntax-dump rule below governs the prose,
-   not this anchor.
+   This block shows the correct usage today. Take it from the docs of step 3,
+   not from the files that you mined. Write one block that shows the form of the
+   code. Do not write a list of API calls. The rule against syntax lists applies
+   to the prose, not to this block.
 
    ## Typical usage patterns
 
-   - Recurring shapes of how you use <target> today — one bullet each: the
-     pattern, when you reach for it, and a real-file cite (`owner/repo:path`)
-     **only when the source repo is public**; for a private-repo source, drop
-     the cite entirely and describe the pattern generically (P-7) — never the
-     repo name/slug/URL or verbatim private code.
-     One line per bullet where you can. Conceptual, not a syntax dump.
-     **Cap: only the 3 highest-value patterns (O-5).** Surface a 4th or further
-     bullet only when it carries strong justification (e.g. a distinct,
-     load-bearing pattern the top 3 genuinely don't cover) — never to pad.
+   - Write one bullet for each pattern of how you use <target> today. Give the
+     pattern and the time when you use it. Cite a real file (`owner/repo:path`)
+     **only when the source repo is public**. For a private source, do not
+     write a cite. Describe the pattern in a general form (P-7).
+     Do not write the private repo name, slug, URL, or code.
+     Write one line for each bullet if possible. Write concepts, not syntax.
+     **Write only the 3 patterns with the highest value (O-5).** Add a fourth
+     bullet only for a strong reason. An example is a different, important
+     pattern that the top 3 do not cover. Never add a bullet only to fill space.
 
    ## Learnings
 
-   Each bullet names an obsolete pattern/misconception found in your code and
-   its replacement, framed at the level of *intent and mental model*, not API
-   signatures — terse, one to two lines. **Cap: only the 3 highest-value
-   learnings (O-5).** Add a 4th or further learning only with strong
-   justification (a materially distinct misconception, not a near-duplicate of
-   one already listed):
+   Each bullet names an old pattern or an error from your code and its
+   replacement. Write it at the level of intent and mental model, not API
+   signatures. Write one or two short sentences.
+   **Write only the 3 learnings with the highest value (O-5).** Add a fourth
+   learning only for a strong reason. An example is a different error that the
+   other learnings do not cover.
 
-   - **<Old mental model>** → **<New mental model>.** The why + what now
-     expresses the same intent. (seen in `owner/repo:path` — public sources
-     only; omit the parenthetical for private-repo sources per P-7)
+   - **<Old mental model>** → **<New mental model>.** Give the reason, and say
+     what now expresses the same intent. (seen in `owner/repo:path`. Use only
+     public sources. For private sources, do not write this part, per P-7.)
 
    ## Agent rules
 
-   Imperative, point-form guardrails a coding agent (e.g. Claude Code) applies
-   directly — each distilled from a Learning/pattern above. Every bullet starts
-   with ALWAYS or NEVER and is directly actionable; no "why", no old→new framing
-   (that lives in Learnings):
+   Write rules that a coding agent (for example, Claude Code) can apply
+   directly. Take each rule from a Learning or a pattern above. Start each
+   bullet with ALWAYS or NEVER. Give one directive in each bullet. Do not give
+   a reason. Do not use the old → new form, because that form is for Learnings.
 
    - ALWAYS <do the current-practice action>.
-   - NEVER <do the obsolete/anti-pattern action>.
+   - NEVER <do the old action>.
    ````
 
-6. **Author the Learnings section at conceptual altitude (O-6).** Every entry
-   must explain a *why* — the shift in intent or model. Reject syntax-only diffs
-   ("`x()` is now `y()`") unless paired with the conceptual reason. If a change
-   is purely cosmetic syntax, leave it out.
+6. **Write the Learnings section at the level of concepts (O-6).** Each entry
+   must give a reason. The reason is the change in intent or in the mental
+   model. Do not write a change that is only syntax (for example, "`x()` is now
+   `y()`"). You can write it only together with the reason for the change in
+   concept. Do not write a change that is only cosmetic syntax.
 
-7. **Author the Agent rules section (O-7).** Project the same findings into
-   imperative, directly-actionable guardrails a coding agent applies without
-   rereading prose. Every bullet starts with **ALWAYS** or **NEVER**, in point
-   form, one directive per bullet — at least one per material guardrail. Derive
-   them from the Learnings/Typical-usage findings, but keep them purely
-   imperative: no conceptual old→new framing (that stays in Learnings), no
-   signature dumps, no YAML frontmatter/tags. The rules live inside this single
-   cheatsheet file — never a separate artifact.
+7. **Write the Agent rules section (O-7).** Write the same findings as
+   directives that a coding agent can apply without the prose. Start each
+   bullet with **ALWAYS** or **NEVER**. Write one directive in each bullet, in
+   point form. Write at least one rule for each important safety rule. Take the
+   rules from the Learnings and the usage patterns. Do not write the old → new
+   form, lists of signatures, YAML frontmatter, or tags. Keep the rules in this
+   cheatsheet file. Never make a separate file for them.
 
 8. **Register the cheatsheet.** Run `uv run scripts/register_cheatsheet.py` to
-   regenerate the root `index.md` (Constitution P-4). Do not hand-edit
-   `index.md`.
+   update the root `index.md` (Constitution P-4). Do not edit `index.md`
+   manually.
 
-9. **Report** the path written, the files mined, the doc source used, and the
-   number of learnings surfaced.
+9. **Check the cheatsheet.** Run
+   `uv run tests/test_ste_prose.py`,
+   `uv run tests/test_cheatsheet_form.py`, and
+   `uv run tests/test_no_private_repo_leak.py`.
+   If a test fails, correct the cheatsheet and run the test again.
+
+10. **Report** the path of the file, the files that you mined, the source of
+    the docs, and the number of learnings.
 
 ## Constraints
 
-- GitHub access via `gh` CLI only (P-5).
-- Any deterministic helper is a self-contained `uv`/PEP-723 script (P-1/P-2);
-  this skill currently shells out only to `scripts/register_cheatsheet.py`.
-- Favor the simplest path that yields a useful cheatsheet (P-3).
-- **Never leak a private repo (P-7).** The written cheatsheet MUST NOT contain
-  the name, owner/repo slug, or URL of a private repository, nor quote or
-  reproduce its code/content. Patterns learned from private repos are conveyed
-  redacted and generalized; only public sources may be cited verbatim.
+- Use only the `gh` CLI for GitHub access (P-5).
+- Write each deterministic helper as a self-contained `uv` script with PEP 723
+  metadata (P-1, P-2). This skill runs only `scripts/register_cheatsheet.py`
+  and the tests in `tests/`.
+- Use the most simple method that makes a useful cheatsheet (P-3).
+- **Never show a private repo (P-7).** The cheatsheet MUST NOT contain the name,
+  the owner/repo slug, or the URL of a private repository. It MUST NOT quote or
+  copy the code or text of a private repository. Give the patterns from private
+  repos only in a general form. Cite only public sources word for word.
+- Write all prose in ASD-STE100 Simplified Technical English (P-8).

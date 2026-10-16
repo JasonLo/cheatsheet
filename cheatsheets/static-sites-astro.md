@@ -1,11 +1,11 @@
 # Static sites with Astro
 
-_Grounded in JasonLo's repos as of 2026-06-05; current practice per Astro official docs (context7 `/withastro/docs`, Astro v6)._
+_Grounded in JasonLo's repos as of 2026-06-05. Current practice is from Astro official docs (context7 `/withastro/docs`, Astro v6)._
 
 ## Reference snippet
 
 ```ts
-// src/content.config.ts — typed content collections
+// src/content.config.ts: content collections with types
 import { defineCollection } from 'astro:content';
 import { glob } from 'astro/loaders';
 import { z } from 'astro/zod';
@@ -15,7 +15,7 @@ const blog = defineCollection({
   schema: z.object({
     title: z.string(),
     description: z.string(),
-    publishDate: z.coerce.date(),     // string frontmatter -> Date
+    publishDate: z.coerce.date(),     // changes string frontmatter to Date
     draft: z.boolean().default(false),
     tags: z.array(z.string()).optional(),
   }),
@@ -24,59 +24,36 @@ const blog = defineCollection({
 export const collections = { blog };
 ```
 
-```js
-// astro.config.mjs
-import { defineConfig } from 'astro/config';
-import mdx from '@astrojs/mdx';
-import sitemap from '@astrojs/sitemap';
-
-export default defineConfig({
-  site: 'https://example.com',           // required for sitemap/canonical URLs
-  integrations: [mdx(), sitemap()],
-});
-```
-
-```astro
----
-// src/pages/blog/[slug].astro — static page from a collection
-import { getCollection, getEntry, render } from 'astro:content';
-import BaseLayout from '../../layouts/BaseLayout.astro';
-
-export async function getStaticPaths() {
-  const posts = await getCollection('blog', ({ data }) => !data.draft);
-  return posts.map((post) => ({ params: { slug: post.id } }));
-}
-
-const post = await getEntry('blog', Astro.params.slug!);
-const { Content } = await render(post);   // v6: render(entry), not entry.render()
----
-<BaseLayout>
-  <h1>{post.data.title}</h1>
-  <Content />
-</BaseLayout>
-```
-
 ## Typical usage patterns
 
-- Content-focused static site, **no UI framework** — pure `.astro` + Markdown/MDX; ships zero client JS by default. (`JasonLo/jasonlo.dev`)
-- One `src/content.config.ts` with many typed collections (`blog`, `projects`, `publications`, `tools`, `journey`), each a `glob()` loader + a rich Zod `schema`. (`JasonLo/jasonlo.dev:src/content.config.ts`)
-- Query via `getCollection` / `getEntry`, render bodies via `render(entry)` → `<Content />`; dynamic routes built statically through `getStaticPaths`. (`JasonLo/jasonlo.dev:src/pages/blog/[slug].astro`)
+- The site is a static content site with **no UI framework**. It uses only `.astro` files with Markdown and MDX. (seen in `JasonLo/jasonlo.dev`)
+- One `src/content.config.ts` file declares many typed collections, for example `blog`, `projects`, `publications`, `tools`, and `journey`. Each collection has a `glob()` loader and a detailed Zod `schema`. (seen in `JasonLo/jasonlo.dev:src/content.config.ts`)
+- Pages query with `getCollection` and `getEntry`, and render bodies with `render(entry)` and `<Content />`. The `getStaticPaths` function builds the dynamic routes statically. (seen in `JasonLo/jasonlo.dev:src/pages/blog/[slug].astro`)
 
 ## Learnings
 
-- **Frontmatter is untyped text** → **a collection schema is the validated, typed contract.** Define a Zod schema per collection; coerce/validate at build (`z.coerce.date`, enums, defaults) so pages consume real types and bad content fails the build, not the browser.
-- **"Where files live = a folder convention"** → **collections are declared, not discovered.** In v6 you register collections in `src/content.config.ts` with an explicit `loader: glob({...})`; the source dir is a config value, not magic. The legacy auto-`src/content/<name>` collection model is gone.
-- **A site framework means shipping a JS runtime** → **Astro ships zero JS by default; hydration is opt-in per component.** Reach for a client island (`client:*`) only for genuinely interactive widgets; static content and light DOM work stay HTML + a plain `<script>`.
+- **Frontmatter is untyped text** → **A collection schema validates and types the frontmatter.** Each Zod schema coerces and validates values at build time, for example with `z.coerce.date`, enums, and defaults. Then pages get real types, and content with errors stops the build before it gets to the browser.
+- **The folder of a file defines its collection** → **You declare collections. Astro does not discover them.** In v6, you register each collection in `src/content.config.ts` with a specified `loader: glob({...})`. The source folder is a config value, and Astro removed the old automatic `src/content/<name>` model.
+- **A site framework sends a JS runtime to the browser** → **Astro sends no JS by default, and you must request hydration.** Use a client island (`client:*`) only for interactive widgets. For static content and simple DOM work, use HTML with a plain `<script>`.
 
 ## Agent rules
 
-- ALWAYS declare content collections in `src/content.config.ts` with an explicit `loader: glob({ pattern, base })`.
-- ALWAYS give every collection a Zod `schema`; use `z.coerce.date()` for dates, `z.enum(...)` for fixed sets, `.default(...)`/`.optional()` for optional frontmatter.
-- ALWAYS access content through `getCollection` / `getEntry` from `astro:content`; NEVER read content files from disk directly.
-- ALWAYS render entry bodies with `render(entry)` then `<Content />`; NEVER call `entry.render()` (removed in v6).
-- ALWAYS build dynamic content routes statically via `getStaticPaths`.
-- ALWAYS set `site` in `astro.config.mjs` when using sitemap or canonical/absolute URLs.
-- NEVER add a UI-framework integration or `client:*` directive for static content or trivial DOM work; use a scoped `<script>` instead.
-- ALWAYS use `<script is:inline>` for pre-paint logic (theme, reduced-motion) to avoid flashes; reserve hydrated islands for genuinely stateful widgets.
-- ALWAYS emit generated artifacts (search index, RSS, llms.txt, robots) as endpoint routes exporting `GET()` that read the same collections.
-- ALWAYS filter drafts at query time (e.g. a shared `getPublished` wrapper) so unpublished entries never reach a page.
+- ALWAYS declare content collections in `src/content.config.ts` with a specified `loader: glob({ pattern, base })`.
+- ALWAYS give every collection a Zod `schema`.
+- ALWAYS use `z.coerce.date()` for dates in a collection schema.
+- ALWAYS use `z.enum(...)` for fixed sets of values.
+- ALWAYS use `.default(...)` or `.optional()` for optional frontmatter.
+- ALWAYS access content through `getCollection` and `getEntry` from `astro:content`.
+- NEVER read content files from disk directly.
+- ALWAYS render entry bodies with `render(entry)` and then `<Content />`.
+- NEVER call `entry.render()`.
+- ALWAYS build dynamic content routes statically with `getStaticPaths`.
+- ALWAYS set `site` in `astro.config.mjs` when you use sitemap, canonical URLs, or absolute URLs.
+- NEVER add a UI-framework integration or a `client:*` directive for static content or simple DOM work.
+- ALWAYS use a scoped `<script>` for simple DOM work.
+- ALWAYS use `<script is:inline>` for pre-paint logic, for example theme and reduced motion, to prevent flashes.
+- ALWAYS keep hydrated islands for stateful widgets only.
+- ALWAYS emit generated files, for example search index, RSS, llms.txt, and robots, as endpoint routes that export `GET()`.
+- ALWAYS make these endpoint routes read the same collections as the pages.
+- ALWAYS filter drafts at query time, for example with a shared `getPublished` wrapper.
+- NEVER let unpublished entries appear on a page.

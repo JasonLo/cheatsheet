@@ -1,6 +1,6 @@
 # MCP server development with fastmcp
 
-_Grounded in JasonLo's repos as of 2026-08-31; current practice per [gofastmcp.com](https://gofastmcp.com) (v4.0)._
+_Grounded in JasonLo's repos as of 2026-08-31. Current practice is from [gofastmcp.com](https://gofastmcp.com) (v4.0)._
 
 ## Reference snippet
 
@@ -19,25 +19,30 @@ def get_memo(topic: str) -> str:
     return f"Notes on {topic}"
 
 if __name__ == "__main__":
-    mcp.run()  # stdio (default); swap for mcp.run(transport="http", host="0.0.0.0", port=8000)
+    mcp.run()  # stdio is the default. For HTTP, use mcp.run(transport="http", host="0.0.0.0", port=8000)
 ```
 
 ## Typical usage patterns
 
-- Server construction: `FastMCP("name")` + bare `@mcp.tool` / `@mcp.resource("uri://{param}")` decorators; type annotations drive the JSON schema; docstring is the LLM-visible prompt — keep it precise (seen in `JasonLo/best-in-slot:slots/python-ai/fastmcp/example/`)
-- In-memory test client for MCP protocol-layer tests: `async with Client(mcp) as client: result = await client.call_tool("name", {args})` — no network, no subprocess; direct function calls also work for pure logic unit tests since `@mcp.tool` preserves the decorated symbol as the original callable in fastmcp v3+/v4 (seen in `JasonLo/best-in-slot:slots/python-ai/fastmcp/example/tests/`)
-- Transport selection: `mcp.run()` (stdio, local/Claude Desktop); `mcp.run(transport="http", host="0.0.0.0", port=8000)` for hosted/multi-client; register via `claude mcp add <name> --command <binary>` (stdio) or `--transport http --url http://host:port/mcp` (HTTP)
+- **Server construction**. A server is `FastMCP("name")` with bare `@mcp.tool` and `@mcp.resource("uri://{param}")` decorators, and the type annotations produce the JSON schema. Write a precise docstring, because the LLM sees it as the prompt. (seen in `JasonLo/best-in-slot:slots/python-ai/fastmcp/example/`)
+- **In-memory test client**. Protocol-layer tests use `async with Client(mcp) as client: result = await client.call_tool("name", {args})` with no network and no subprocess. Unit tests of pure logic can call the decorated function directly. (seen in `JasonLo/best-in-slot:slots/python-ai/fastmcp/example/tests/`)
+- **Transport selection**. The stdio form `mcp.run()` serves local use and Claude Desktop, and `mcp.run(transport="http", host="0.0.0.0", port=8000)` serves hosted or multi-client servers. Register with `claude mcp add <name> --command <binary>` for stdio or `--transport http --url http://host:port/mcp` for HTTP.
 
 ## Learnings
 
-- **`@mcp.tool` preserves the decorated symbol as the original callable** → in fastmcp v3+/v4, `@mcp.tool` no longer rebinds the name to a FunctionTool; the decorated function remains directly callable for pure unit tests; the `FASTMCP_DECORATOR_MODE="object"` backward-compat flag was eliminated in v4.0; use `Client.call_tool()` when testing full MCP protocol-layer behavior (schema validation, transport)
-- **`print()` to stdout corrupts the stdio protocol** → the MCP wire format is JSON-RPC over stdin/stdout; route all logging to a file (`logging.basicConfig(filename="server.log", ...)`) or stderr; never `print()` when the stdio transport is active (seen in `JasonLo/best-in-slot:slots/python-ai/fastmcp/README.md`)
-- **SSE transport is now legacy** → Streamable HTTP replaced SSE as the non-stdio standard; use `transport="http"` for hosted deployments; SSE is retained for backward compatibility only, not for new projects
+- **`@mcp.tool` replaces the function with a framework tool object** → **`@mcp.tool` registers the function and leaves it a plain callable**. The function stays testable as plain Python. Use `Client.call_tool()` only to test the protocol layer, for example schema validation and transport.
+- **A server can print to stdout** → **Stdout is the protocol channel in the stdio transport**. MCP sends JSON-RPC over stdin and stdout, so any `print()` corrupts the stream. Send logs to a file with `logging.basicConfig(filename="server.log", ...)` or to stderr. (seen in `JasonLo/best-in-slot:slots/python-ai/fastmcp/README.md`)
+- **SSE is the transport for remote servers** → **Streamable HTTP is the standard transport for remote servers**. Use `transport="http"` for hosted deployments. SSE stays only for backward compatibility and not for new projects.
 
 ## Agent rules
 
-- ALWAYS route all logging to a file or stderr when using stdio transport; NEVER use `print()` to stdout.
-- ALWAYS use `async with Client(mcp) as client` for MCP integration tests (protocol-layer behavior, schema validation); for pure function-logic unit tests, calling the decorated function directly is also valid — `@mcp.tool` preserves the original callable in fastmcp v3+/v4.
-- ALWAYS use `@mcp.tool` (bare) for simple tools; use `@mcp.tool(name=..., timeout=..., run_in_thread=False)` only when the defaults need overriding.
-- ALWAYS use `transport="http"` for hosted or multi-client deployments; NEVER start a new project on SSE transport.
-- NEVER store state in module-level globals; persist state via Resources or an external store — each tool call is independent.
+- ALWAYS send all logs to a file or to stderr when the server uses the stdio transport.
+- NEVER use `print()` to stdout in a stdio server.
+- ALWAYS use `async with Client(mcp) as client` for MCP integration tests of protocol behavior and schema validation.
+- ALWAYS call the decorated function directly in unit tests of pure logic.
+- ALWAYS use the bare `@mcp.tool` for simple tools.
+- NEVER use `@mcp.tool(name=..., timeout=..., run_in_thread=False)` unless you must change a default.
+- ALWAYS use `transport="http"` for hosted or multi-client deployments.
+- NEVER start a new project on the SSE transport.
+- NEVER store state in module-level globals.
+- ALWAYS keep state in Resources or in an external store.
