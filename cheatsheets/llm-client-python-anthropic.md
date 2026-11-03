@@ -1,6 +1,6 @@
 # LLM client (Python) with anthropic
 
-_Grounded in JasonLo's repos as of 2026-10-01. Current practice is from [platform.claude.com/docs/en/about-claude/models/overview](https://platform.claude.com/docs/en/about-claude/models/overview) and the anthropic-sdk-python MIGRATION.md (Aug 2026)._
+_Grounded in JasonLo's repos as of 2026-11-03. Current practice is from [platform.claude.com/docs/en/about-claude/models/overview](https://platform.claude.com/docs/en/about-claude/models/overview) and the anthropic-sdk-python MIGRATION.md (Aug 2026)._
 
 ## Reference snippet
 
@@ -48,8 +48,8 @@ with client.messages.stream(
 - NEVER expect a default value for `max_tokens`.
 - ALWAYS pass `system=` as a top-level argument.
 - NEVER put a `{"role": "system", ...}` entry inside the `messages` list.
-- ALWAYS use current model IDs: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-1`, or `claude-haiku-4-5-20251001`.
-- NEVER write new code that uses old model IDs, for example `claude-opus-5`, `claude-sonnet-5`, or `claude-opus-4-8`.
+- ALWAYS use current model IDs: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-1`, or `claude-haiku-5-5`.
+- NEVER write new code that uses old model IDs, for example `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5-20251001`, or `claude-opus-4-8`.
 - NEVER pass `temperature`, `top_p`, or `top_k` as direct arguments to `messages.create()` or `messages.stream()`.
 - ALWAYS add `cache_control: {type: ephemeral}` to a stable system prompt that is above the minimum cacheable size.
 - NEVER skip the `tool_result` message when `stop_reason == "tool_use"`.
