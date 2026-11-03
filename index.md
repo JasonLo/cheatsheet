@@ -2,6 +2,7 @@
 
 <!-- scripts/register_cheatsheet.py makes this file. Do not edit it manually. -->
 
+- [Automating recurring meeting slides with gslides](cheatsheets/automating-recurring-meeting-slides-gslides.md)
 - [CI/CD workflow hardening with github-actions](cheatsheets/ci-cd-workflow-hardening-github-actions.md)
 - [Claude Code skills with SKILL.md](cheatsheets/claude-code-skills.md)
 - [Code preferences with CLAUDE.md](cheatsheets/claude-md-code-preferences.md)
@@ -11,8 +12,10 @@
 - [Converting scraped web content to markdown for LLM pipelines with markitdown](cheatsheets/converting-scraped-web-content-to-markdown-for-llm-pipelines-markitdown.md)
 - [Data apps & dashboards with Streamlit](cheatsheets/dashboards-streamlit.md)
 - [Deep learning with PyTorch](cheatsheets/deep-learning-torch.md)
+- [E2E browser testing with playwright](cheatsheets/e2e-browser-testing-with-playwright.md)
 - [Full-feature frontend with React](cheatsheets/frontend-react.md)
 - [Outbound HTTP clients with httpx](cheatsheets/http-client-httpx.md)
+- [HTTP server and SQLite with bun](cheatsheets/http-server-and-sqlite-with-bun.md)
 - [Interactive CLI prompts with questionary](cheatsheets/interactive-cli-prompts-questionary.md)
 - [Linting & formatting with Ruff](cheatsheets/linting-formatting-ruff.md)
 - [Linting & formatting TypeScript/JavaScript with Biome](cheatsheets/linting-formatting-typescript-javascript-biome.md)
@@ -26,9 +29,11 @@
 - [Package management + JS toolchain with bun](cheatsheets/package-management-js-toolchain-bun.md)
 - [Package & project management with uv](cheatsheets/package-management-uv.md)
 - [Python package release workflow with gh](cheatsheets/python-package-release-workflow-gh.md)
+- [Querying and syncing academic publication metadata with pyalex](cheatsheets/querying-and-syncing-academic-publication-metadata-pyalex.md)
 - [Self-contained scripts with uv](cheatsheets/self-contained-scripts-uv.md)
 - [Self-maintenance with anthropics/claude-code-action](cheatsheets/self-maintenance-claude-code-action.md)
 - [Static sites with Astro](cheatsheets/static-sites-astro.md)
+- [Submitting and monitoring HPC batch jobs with htcondor](cheatsheets/submitting-and-monitoring-hpc-batch-jobs-htcondor.md)
 - [Testing with pytest](cheatsheets/testing-pytest.md)
 - [Testing TypeScript with jsdom with Vitest](cheatsheets/testing-typescript-with-jsdom-vitest.md)
 - [TUI applications in TypeScript with opentui](cheatsheets/tui-applications-in-typescript-opentui.md)
