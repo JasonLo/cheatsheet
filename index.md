@@ -2,6 +2,7 @@
 
 <!-- scripts/register_cheatsheet.py makes this file. Do not edit it manually. -->
 
+- [Async HTTP server with starlette](cheatsheets/async-http-server-with-starlette.md)
 - [Automating recurring meeting slides with gslides](cheatsheets/automating-recurring-meeting-slides-gslides.md)
 - [CI/CD workflow hardening with github-actions](cheatsheets/ci-cd-workflow-hardening-github-actions.md)
 - [Claude Code skills with SKILL.md](cheatsheets/claude-code-skills.md)
@@ -23,6 +24,7 @@
 - [Loading large datasets efficiently with datasets](cheatsheets/loading-large-datasets-efficiently-with-datasets.md)
 - [Managing conda environments and container dependencies with pixi](cheatsheets/managing-conda-environments-and-container-dependencies-pixi.md)
 - [MCP server development with fastmcp](cheatsheets/mcp-server-development-fastmcp.md)
+- [Multi-provider LLM routing with openrouter](cheatsheets/multi-provider-llm-routing-with-openrouter.md)
 - [Multi-service local dev with Docker Compose with docker-compose](cheatsheets/multi-service-local-dev-with-docker-compose-docker-compose.md)
 - [Notebook kernels with ipykernel](cheatsheets/notebooks-ipykernel.md)
 - [ORM with Pydantic models with sqlmodel](cheatsheets/orm-with-pydantic-models-with-sqlmodel.md)
