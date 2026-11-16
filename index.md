@@ -14,6 +14,7 @@
 - [Data apps & dashboards with Streamlit](cheatsheets/dashboards-streamlit.md)
 - [Deep learning with PyTorch](cheatsheets/deep-learning-torch.md)
 - [E2E browser testing with playwright](cheatsheets/e2e-browser-testing-with-playwright.md)
+- [Embedded relational database in Python with sqlite3](cheatsheets/embedded-relational-database-in-python-with-sqlite3.md)
 - [Full-feature frontend with React](cheatsheets/frontend-react.md)
 - [Outbound HTTP clients with httpx](cheatsheets/http-client-httpx.md)
 - [HTTP server and SQLite with bun](cheatsheets/http-server-and-sqlite-with-bun.md)
@@ -42,4 +43,5 @@
 - [Type checking with ty](cheatsheets/type-checking-ty.md)
 - [Validation with Pydantic v2](cheatsheets/validation-pydantic.md)
 - [Web API servers with FastAPI](cheatsheets/web-api-fastapi.md)
+- [Web content extraction for LLM pipelines with trafilatura](cheatsheets/web-content-extraction-for-llm-pipelines-with-trafilatura.md)
 - [Lightweight TS web services with Hono](cheatsheets/web-services-hono.md)
